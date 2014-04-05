@@ -4,7 +4,7 @@
 
 =head1 NAME 
 
-read_kmer_filter.pl
+kmer-dist.pl
 
 =cut
 
@@ -67,7 +67,7 @@ Filter reads based on kmer count information.
 
 =head1 SYNOPSIS
 
-  read_kmer_filter.pl [<OPTIONS>] -h <HASH> -k <KMERSIZE> -n <NUMBER_OF_GOOD_KMERS> -l <LOWER_BOUND> -u <UPPER_BOUND> -1 <FASTQ> [ <FASTQ> ... ] [-2 <FASTQ> <FASTQ> ... ]
+  kmer-dist.pl [<OPTIONS>] -k <HASH> -m <KMERSIZE> -n <NUMBER_OF_GOOD_KMERS> -l <LOWER_BOUND> -u <UPPER_BOUND> -1 <FASTQ> [ <FASTQ> ... ] [-2 <FASTQ> <FASTQ> ... ]
   
 =cut
 
@@ -201,7 +201,6 @@ my %opt = (
     cutoff => '95%',
     penalize_N => 1,
     perl_hash => 1,
-    %{$cfg{kfr}}
 );
 
 
