@@ -1,0 +1,26 @@
+* Basic
+- Manipulation of kmer distributions
+- Kmer based read filtering
+- kmer based read/sequence masking
+
+* kmer-dist.pl
+- based on kmer_filter_reads.pl of the chloroExtractor project
+- reads jellyfish kmer hash
+- reads kmer dist to perl hash
+- reads fq reads
+
+- filters reads -> filter dist
+
+** TODO testdata
+*** DONE simple file
+    CLOSED: [2014-04-05 Sat 15:43]
+four reads cloned different times to generate kmers at four different
+levels
+
+*** DONE jf db of simple file
+    CLOSED: [2014-04-05 Sat 15:46]
+- kmer-size 5
+
+** Progress
+*** removed CFG stuff
+
