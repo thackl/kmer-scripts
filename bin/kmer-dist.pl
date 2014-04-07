@@ -14,54 +14,7 @@ Filter reads based on kmer count information.
 
 =cut
 
-
-=head1 CHANGELOG
-
-=cut
-
-=head2 0.02
-
-=over
-
-=item [Change] Only retrieve _2 counts if _1 did not fail.
-
-=item [Feature] --kmer-shift - only take every n-th kmer into account
-
-=back
-
-=head2 0.01
-
-=over
-
-=item [Initial]
-
-=back
-
-=cut
-
 =head1 TODO
-
---help
-
--q 0 <= q <= 100
-
-#=item --both [OFF]
-#
-#Only in paired mode. By default, reads pair is discarded if either one read 
-# fails the filter. With --both pairs, where both reads fail are discarded.
-#
-#=item --dump-discarded
-#
-#Dump discarded reads in extra files.
-#
-#=item -o|--out <FILE>
-#
-#Output file name. There will be thread wise temporary output files created
-# at --out location and finally merged to --out.
-#
-#=item [-t|--threads <INT>] [1]
-#
-#Number of threads to use
 
 =cut
 
@@ -91,7 +44,7 @@ Read files in FASTQ format, second of pair. Use the same order as for --reads.
 
 Prefix for the output files
 
-=item -m|--kmer-size
+=item -m|--kmer-size [19]
 
 Size of kmers used in Jellyfish hash.
 
@@ -197,6 +150,7 @@ my %opt = (
     mates => [],
     lower => 5,
     upper => 200,
+    'kmer-size' => 19,
     'kmer-shift' => 1,
     cutoff => '95%',
     penalize_N => 1,
@@ -241,7 +195,7 @@ $L->debug("GetOptions:\n", Dumper(\%opt));
 
 ##------------------------------------------------------------------------##	
 # required	
-for(qw(kmer-hash kmer-size cutoff reads mates)){
+for(qw(kmer-hash kmer-size cutoff reads)){
     if(ref $opt{$_} eq 'ARRAY'){
 	pod2usage("required: --$_") unless @{$opt{$_}}
     }else{
@@ -285,7 +239,7 @@ $L->warn("--lower($opt_l) > --upper($opt_u), are you sure that's what you want?"
 
 $L->logdie("Multiple input files currently unimplemented") if(@opt_reads>1);
 my $out_file1 = $opt{out} ? $opt{out}."_1.fq" : basename($opt_reads[0], @fq_suffixes).".fil.fq";
-my $out_file2 = $opt{out} ? $opt{out}."_2.fq" : basename($opt_mates[0], @fq_suffixes).".fil.fq";
+my $out_file2 = $opt{out} ? $opt{out}."_2.fq" : basename($opt_mates[0], @fq_suffixes).".fil.fq" if @opt_mates;
 
 ##------------------------------------------------------------------------##	
 
