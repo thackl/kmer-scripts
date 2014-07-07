@@ -19,10 +19,6 @@ $Data::Dumper::Sortkeys = 1;
 
 # additional modules
 
-use Jellyfish 0.04; # get_kmer_size
-use Kmer;
-use Verbose::ProgressBar;
-
 #------------------------------------------------------------------------------#
 # Globals
 
