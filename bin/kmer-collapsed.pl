@@ -46,6 +46,7 @@ my %opt = (
     x1 => 1,
     x2 => 1,
     "window-size" => 1,
+    NA => "NA",
 );
 
 
@@ -63,13 +64,23 @@ Coverage file of primary data set (reads).
 
 Coverage file of secondary data set (assembly).
 
-=item -x=<INT>
+=item -x=<INT> [1]
 
 Expected coverage of primary data set.
 
-=item -y=<INT>
+=item -y=<INT> [1]
 
 Expected coverage of secondary data set.
+
+=item -w/--window-size=<INT> [1]
+
+Use median coverage of window instead of individual values. Increases
+data smoothness and speeds up computation.
+
+=item --NA ["NA"]
+
+NA string, used if ratio computation would fail due to "0" coverage in
+secondary data set.
 
 =back
 
@@ -84,6 +95,7 @@ GetOptions(\%opt, qw(
 	x1|x=i
 	x2|y=i
         window-size=i
+	NA
 	quiet
 	debug
 	help|h
@@ -150,7 +162,7 @@ while(
     my @covr;
     if($ws < 2){
 	for(my $i=0; $i<@cov1; $i++){
-	    $covr[$i] = sprintf("%.02f", ($cov1[$i]/$x1) / ($cov2[$i]/$x2));
+	    $covr[$i] = $cov2[$i] ? sprintf("%.02f", ($cov1[$i]/$x1) / ($cov2[$i]/$x2)) : $opt{NA};
 	}
     }else{
 	next unless @cov1>=$ws; # ignore short seqs
@@ -160,7 +172,7 @@ while(
 	for(my $i=0; $i<@cov1-$ws; $i+=$ws){
 	    $wcov1 = (sort{$a<=>$b}(@cov1[$i..$i+$wn]))[$wh];
 	    $wcov2 = (sort{$a<=>$b}(@cov2[$i..$i+$wn]))[$wh];
-    	    push @covr, sprintf("%.02f", ($wcov1/$x1) / ($wcov2/$x2) );
+    	    push @covr, $wcov2 ? sprintf("%.02f", ($wcov1/$x1) / ($wcov2/$x2) ) : $opt{NA};
 	}
     }
     print $id1, "\t", "MED", "\t", join(" ", @covr), "\n";
