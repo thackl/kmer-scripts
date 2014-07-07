@@ -95,7 +95,7 @@ GetOptions(\%opt, qw(
 	x1|x=i
 	x2|y=i
         window-size=i
-	NA
+	NA=s
 	quiet
 	debug
 	help|h
@@ -170,12 +170,33 @@ while(
 	my $wh=int($ws/2);
 	my ($wcov1, $wcov2);
 	for(my $i=0; $i<@cov1-$ws; $i+=$ws){
-	    $wcov1 = (sort{$a<=>$b}(@cov1[$i..$i+$wn]))[$wh];
-	    $wcov2 = (sort{$a<=>$b}(@cov2[$i..$i+$wn]))[$wh];
+	    $wcov1 = median([@cov1[$i..$i+$wn]]);
+	    $wcov2 = median([@cov2[$i..$i+$wn]]);
     	    push @covr, $wcov2 ? sprintf("%.02f", ($wcov1/$x1) / ($wcov2/$x2) ) : $opt{NA};
 	}
     }
-    print $id1, "\t", "MED", "\t", join(" ", @covr), "\n";
+    
+    print $id1, "\t", median_NA_omit([@covr]) // $opt{NA}, "\t", join(" ", @covr), "\n";
 }
 
+=head2 median_NA_omit
 
+Takes an array reference, returns the median. Omits NA's, which
+requires copying the array and, thus, makes it slower than median().
+
+=cut
+
+sub median_NA_omit{
+    my @nums = grep{$_ ne $opt{NA}}@{$_[0]}; # slow copy to omit NA
+    return (sort{$a<=>$b}@nums)[$#nums/2];
+}
+
+=head2 median
+
+Takes an array reference, returns the median.
+
+=cut
+
+sub median{
+    return (sort{$a<=>$b}@{$_[0]})[$#_/2];
+}
