@@ -50,6 +50,32 @@ my %opt = (
 
 
 #------------------------------------------------------------------------------#
+
+=head1 Options
+
+=over
+
+=item -1=<FILE>
+
+Coverage file of primary data set (reads).
+
+=item -2=<FILE>
+
+Coverage file of secondary data set (assembly).
+
+=item -x=<INT>
+
+Expected coverage of primary data set.
+
+=item -y=<INT>
+
+Expected coverage of secondary data set.
+
+=back
+
+=cut
+
+
 # GetOptions
 Getopt::Long::Configure("no_ignore_case");
 GetOptions(\%opt, qw(
@@ -71,6 +97,7 @@ if($opt{version}){
 	print "$VERSION\n"; 
 	exit 0;
 }
+
 
 $opt{quiet} && $L->level($WARN);
 $opt{debug} && $L->level($DEBUG);
