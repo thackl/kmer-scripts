@@ -1,0 +1,157 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+
+use Pod::Usage;
+use Getopt::Long;
+
+use Kmer;
+use Jellyfish;
+use Fasta::Parser;
+use Fastq::Parser;
+
+my %opt;
+
+=head1 NAME 
+
+reads_cov.pl
+
+=cut
+
+=head1 DESCRIPTION
+
+=cut
+
+=head1 USAGE
+
+  $ pv <READS.f[aq]> | kmer-coverage --hash <JELLYFISH HASH>  > READS.cov
+
+=cut
+
+=head1 CHANGELOG
+
+=over
+
+=item [PodFix] USAGE, obsolete parameter ...
+
+=back
+
+=cut
+
+=head1 OPTIONS
+
+=over 25
+
+=cut
+
+=item -k|--hash=<file>
+
+path to the jellyfish kmer hash file. 
+
+=cut
+
+$opt{'hash|k=s'} = \(my $opt_hash);
+
+=item --reads=<file>
+
+the read file in fastq/fasta format, default is STDIN, set explicitly with '-'.
+
+=cut
+
+$opt{'reads=s'} = \(my $opt_reads = undef);
+
+=item [--[no]verbose] 
+
+verbose is default.
+
+=cut
+
+$opt{'verbose!'} = \(my $opt_verbose = 1);
+
+=item [--help] 
+
+show help
+
+=cut
+
+$opt{'help|?'} = \(my $opt_help);
+
+=item [--man] 
+
+show man page
+
+=cut
+
+$opt{'man'} = \(my $opt_man);
+
+=back
+
+Output: one line per read, 3 fields (id, median count, per-base counts) tab separated, counts space separated
+
+  read1   120   1034 1223 1212 1234 1002 878 676 424 ...
+  read2   56    68 54 48 44 56 ...
+
+=head1 CODE
+
+=cut
+
+
+GetOptions(%opt) or pod2usage(1);
+
+pod2usage(1) if($opt_help);
+pod2usage(-verbose => 99, -sections => "NAME|DESCRIPTION|USAGE|OPTIONS|LIMITATIONS|AUTHORS") if($opt_man);
+
+pod2usage(-msg => "--hash required", -verbose => 0) unless ($opt_hash);
+$opt_reads = undef if (defined $opt_reads && $opt_reads eq '-');
+
+unless(defined $opt_reads){
+	$opt_verbose && print STDERR "Reading from STDIN\n";
+}
+
+my $fp;
+my $is_fastq;
+# try fastq;
+if($fp = Fastq::Parser->new(file => $opt_reads)->check_format){
+	$is_fastq = 1;
+}elsif($fp = Fasta::Parser->new(file => $opt_reads)->check_format){
+	$is_fastq = 0;
+}else{
+	die "--reads $opt_reads neither FASTQ nor FASTA";
+}
+
+
+my $jf = Jellyfish->new();
+#my $stats = $jf->stats([$opt_hash]);
+#print $stats;
+
+my $kh = Kmer->new(kmer_size => 19);
+my @kmers;
+
+while(my $fs = $fp->next_seq){
+	@kmers = $kh->cmerize($fs->seq);
+	my @covs = $jf->query([$opt_hash], kmers => \@kmers, table =>0);
+	my $median = (sort{$a<=>$b}@covs)[@covs/2];
+	printf "%s\t%s\t%s\n", $fs->id, $median, join (" ", @covs);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
