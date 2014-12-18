@@ -46,7 +46,8 @@ Prefix for the output files
 
 =item -n|--cutoff <INT/INT%> [95%]
 
-Minimum number of kmers in range [--lower .. --upper] for read to be accepted. Absolute number or percentage, e.g. 90%.
+Minimum number of kmers in range [--lower .. --upper] for read to be
+accepted. Absolute number or percentage, e.g. 90%.
 
 =item -u|--upper <INT> [200]
 
@@ -56,13 +57,19 @@ Upper kmer count cutoff. 0 deactivates cutoff.
 
 Lower kmer count cutoff. 0 deactivates cutoff.
 
+=item -b|--both [OFF]
+
+In paired mode, by default, a pair is kept if at least one read satisfies cutoff
+criteria. Use --both to only return pairs with both reads passing the filter.
+
 =item -x|--kmer-shift [1]
 
 Use every x kmer.
 
 =item [--[no]-penalize-N] [ON]
 
-"N" containing kmers are set to count "0" by default. Disable --penalize-N to use their acutal counts.
+"N" containing kmers are set to count "0" by default. Disable --penalize-N to
+use their acutal counts.
 
 =item [--max-reads <INT>] [0]
 
@@ -173,6 +180,7 @@ GetOptions(\%opt, qw(
 	kmer-shift|x=i
 	penalize_N|penalize-N!
 	histogram=s
+        both!
         quiet
 	debug
 	help|h
@@ -233,7 +241,7 @@ my $opt_c2 = $opt_c; # second read with %
 my $opt_u = $opt{upper};
 my $opt_l = $opt{lower};
 my $opt_m = $opt{'max-reads'};
-
+my $opt_both = $opt{both};
 
 $L->warn("--lower($opt_l) > --upper($opt_u), are you sure that's what you want?") if $opt_u && $opt_l > $opt_u;
 
@@ -402,19 +410,21 @@ unless(@opt_mates){
 			    $opt_c2 = $opt_p * @kmers2;
 			}
 			
+                        if($opt_both){
+                            next if ($c1 < $opt_c1 || $c2 < $opt_c2);
+                        }else{
+                            next if ($c1 < $opt_c1 && $c2 < $opt_c2);
+                        }
 
-			if($c1 < $opt_c1 && $c2 < $opt_c2){
-#				$L->debug("discarded ".$fq1->id." / ".$fq2->id);
-			}else{
-				print FQ1 "$fq1";
-				print FQ2 "$fq2";
+                        print FQ1 "$fq1";
+                        print FQ2 "$fq2";
 		
-				$rc++;
-				if($opt_m && $rc > $opt_m){
-					$L->info("--max-reads ",$opt{'max-reads'}," reached");
-					last;
-				}
-			}
+                        $rc++;
+                        if ($opt_m && $rc > $opt_m) {
+                            $L->info("--max-reads ",$opt{'max-reads'}," reached");
+                            last;
+                        }
+
 		}
 		$pg->finish;
 		close FQ1;
