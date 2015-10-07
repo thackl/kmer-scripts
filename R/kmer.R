@@ -11,11 +11,11 @@ run_task <- function(task, ...){
            kmerPlot=kmerPlot(...),
            unknown_task(task)
            )
-}	 
+}
 
 
 unknown_task <- function(task){
-    write(paste("Unknown task:", task), stderr()); 
+    write(paste("Unknown task:", task), stderr());
     quit(status = 1);
 }
 
@@ -24,7 +24,7 @@ unknown_task <- function(task){
 
 ##-- task kmerPlot --##
 
-kmerPlot <- function(..., coverage=NULL){
+kmerPlot <- function(..., coverage=NULL, out="kmerPlot.pdf", useggplot=FALSE){
 
     coverage <- as.integer(coverage)
     sets <- c(...);
@@ -47,55 +47,87 @@ kmerPlot <- function(..., coverage=NULL){
         lims$covs <- c(lims$covs, max(data[[set]]$peaks$covs[1]))
         lims$freqs <- c(lims$freqs, max(data[[set]]$peaks$freqs[1]))
         lims$frels <- c(lims$frels, max(data[[set]]$peaks$frels[1]))
-        
+
         write(paste(set, max(data[[set]]$peaks$covs[1]), sep="\t"), stdout());
     }
 
-    pdf("kmerPlot.pdf", width=10, height=6);
+    if(useggplot){
+        library("ggplot2")
 
-    write("Plotting filtered kmers", stderr());
-    plot(c(1,1), 
-         type="n", 
-         main="kmer-coverage of data sets",
-         ##log="xy",
-         xlim=c(0,max(lims$covs)*3),
-         ylim=c(1,max(lims$frels)*1.5),
-         xlab="coverage",
-         ylab="frequency"
-         );
+        df <- data.frame(
+            set=rep(sets[1], length(data[[1]]$raw$V1)),
+            x=data[[1]]$raw$V1,
+            y=data[[1]]$raw$V2
+        )
+
+       str(df);
+
+        for (set in sets[2:length(sets)]){
+            df <- rbind(df, data.frame(
+                set=rep(set, length(data[[set]]$raw$V1)),
+                x=data[[set]]$raw$V1,
+                y=data[[set]]$raw$V2
+            ))
+        }
+
+       str(df);
+
+        gg <- ggplot(df, aes(x=x, y=y, group=set, colour=set));
+        gg <- gg + xlim(0, max(lims$covs)*3)
+        gg <- gg + ylim(1,max(lims$frels)*1.5)
+        gg <- gg + geom_line();
+        gg <- gg + labs(x="coverage", y="frequency"
+                        #,title="kmer-coverage of data sets"
+                        )
+
+        ggsave(gg, file=out, width=10, height=6);
+
+    }else{
+        pdf(out, width=10, height=6);
+
+        write("Plotting filtered kmers", stderr());
+        plot(c(1,1),
+             type="n",
+             main="kmer-coverage of data sets",
+             ##log="xy",
+             xlim=c(0,max(lims$covs)*3),
+             ylim=c(1,max(lims$frels)*1.5),
+             xlab="coverage",
+             ylab="frequency"
+             );
 
 
-    i=1;
-    for (set in sets){
-        i=i+1;
-        lines(data[[set]]$raw, col=cl[i], lwd=3);
-        #lines(data[[set]]$data, col=cl[i], lwd=2, lty=5);
-        #abline(v=data[[set]]$peaks$covs[1], lty=5, lwd=2, col=cl[5]);
-        rel=T;
-        peakSizes.add(data[[set]]$peaks, rel=rel);
-        y <- ifelse(rel, max(data[[set]]$peaks$frels), max(data[[set]]$peaks$freqs));
-        total.size=sum(apply(data[[set]]$raw[-1:-15,], MARGIN=1, FUN=prod)) ## ignore first 10 kmers
-        gen.cov <- data[[set]]$peaks$covs[1];
-        text(x=gen.cov, pos=4, y=y*1.4, labels=paste("total:", round( total.size/10^6/gen.cov),"Mbp",sep=" "), vfont=c("sans serif", "bold"))
+        i=1;
+        for (set in sets){
+            i=i+1;
+            lines(data[[set]]$raw, col=cl[i], lwd=3);
+                                        #lines(data[[set]]$data, col=cl[i], lwd=2, lty=5);
+                                        #abline(v=data[[set]]$peaks$covs[1], lty=5, lwd=2, col=cl[5]);
+            rel=T;
+            peakSizes.add(data[[set]]$peaks, rel=rel);
+            y <- ifelse(rel, max(data[[set]]$peaks$frels), max(data[[set]]$peaks$freqs));
+            total.size=sum(apply(data[[set]]$raw[-1:-15,], MARGIN=1, FUN=prod)) ## ignore first 10 kmers
+            gen.cov <- data[[set]]$peaks$covs[1];
+            text(x=gen.cov, pos=4, y=y*1.4, labels=paste("total:", round( total.size/10^6/gen.cov),"Mbp",sep=" "), vfont=c("sans serif", "bold"))
+        }
+
+
+        if(!is.null(coverage)){
+            abline(v=coverage, lwd=2, col=cl[5])
+        }
+
+
+        legend(
+            "topright",
+            basename(sets),
+            lwd=3,
+            lty=1,
+            seg.len=2,
+            col=cl[(1:length(sets))+1]
+        );
+
+        msg <- dev.off()
     }
-
-    
-    if(!is.null(coverage)){
-        abline(v=coverage, lwd=2, col=cl[5])
-    }
-
-
-    legend(
-	"topright",
-    	basename(sets),
-    	lwd=3,
-    	lty=1,
-    	seg.len=2, 
-    	col=cl[(1:length(sets))+1]
-    );
-
-    msg <- dev.off()
-  
 }
 
 
@@ -108,7 +140,7 @@ kmerPlot <- function(..., coverage=NULL){
 ##-- task scr --##
 
 scr <-function(reads.hash, seeds.hash, do.plot=TRUE){
-    
+
     ## from seed reads
     write("Reading seed kmers", stderr());
     seeds <- kmerPeaks(read.table(pipe(paste('jellyfish histo', seeds.hash, sep=" "))), freq.min=0);
@@ -118,7 +150,7 @@ scr <-function(reads.hash, seeds.hash, do.plot=TRUE){
     raw <- kmerPeaks(read.table(pipe(paste('jellyfish histo', reads.hash, sep=" "))), freq.min=0);
 
     ## TODO: warn/die if no peaks
-    
+
     ## get raw peak closest to seed peak
     delta <- abs(raw$peaks$covs - seeds$peaks$covs[1]);
     ## get closest peak(s) - minimum distance, two in case of 2 peaks in of equal dist
@@ -143,7 +175,7 @@ scr <-function(reads.hash, seeds.hash, do.plot=TRUE){
             p2.i <- i;
         }
     }
-        
+
     p1 <- raw$peaks[p1.i,];
     p2 <- NULL;
     if(double.peak){
@@ -152,14 +184,14 @@ scr <-function(reads.hash, seeds.hash, do.plot=TRUE){
     }else{
         pt.size <- round(p1$sizes/p1$covs)
     }
-    
+
     ## TODO: warn/die if pt.size > 400kb
 
     write(paste("coverage", round(p1$cov), sep="\t"), stdout());
     write(paste("size", pt.size, sep="\t"), stdout());
-    
+
     if(do.plot){
-        
+
         pdf("scr-seeds.pdf", width=10, height=6);
 
         write("Plotting seed and total kmers", stderr());
@@ -170,7 +202,7 @@ scr <-function(reads.hash, seeds.hash, do.plot=TRUE){
         xmin <- max(seeds$peaks$covs[1])^(1/2)
         ymax <- max(seeds$peaks$freqs[1])*2.5
 
-        
+
         barplot(
             seeds$data$freqs,
             diff(seeds$data$covs),
@@ -199,14 +231,14 @@ scr <-function(reads.hash, seeds.hash, do.plot=TRUE){
         if(! is.null(p2)){
             abline(v=p2$covs[1], lwd=3, lty=2, col=cl[1]);
         }
-        peakSizes.add(raw$peaks.scaled, rel=T);        
+        peakSizes.add(raw$peaks.scaled, rel=T);
 
         legend(
             "topright",
             c("plastid seed kmers", "plastid seed coverage", "total data kmers (30%)", "total plastid coverage"),
             lwd=3,
             lty=c(1,1,1,1),
-            seg.len=2, 
+            seg.len=2,
             col=cl[c(2,5,4,1)]
         );
 
@@ -237,8 +269,8 @@ kfr <- function(..., coverage=NULL){
     pdf("kfr.pdf", width=10, height=6);
 
     write("Plotting filtered kmers", stderr());
-    plot(c(1,1), 
-         type="n", 
+    plot(c(1,1),
+         type="n",
          main="kmer-coverage of subsetted and filtered data sets",
          ##log="xy",
          xlim=c(0,max(lims$covs)*3),
@@ -254,7 +286,7 @@ kfr <- function(..., coverage=NULL){
         lines(data[[set]]$data, col=cl[i], lwd=3);
         abline(v=data[[set]]$peaks$covs[1], lty=5, lwd=2, col=cl[i]);
     }
-    
+
     if(!is.null(coverage)){
         abline(v=coverage, lwd=2, col=cl[5])
     }
@@ -265,12 +297,12 @@ kfr <- function(..., coverage=NULL){
     	sets,
     	lwd=3,
     	lty=1,
-    	seg.len=2, 
+    	seg.len=2,
     	col=cl[(1:length(sets))+1]
     );
 
     msg <- dev.off()
-  
+
 }
 
 
@@ -280,13 +312,13 @@ rrm <- function(){
 
     ## ref map coverage
     rrm<-read.table("rrm-cov.tsv", header=T);
-    for (df in split(rrm, rrm$id)){ 
+    for (df in split(rrm, rrm$id)){
     	id=df[1,1];
 	if(id == "genome") next;
     	dt=df[,2:3]
   	dt.ex = get_extrema(dt, peaks=c(50,100,150,200));
-    	plot(dt, 
-    	     type="n", 
+    	plot(dt,
+    	     type="n",
     	     main=paste("per-base coverage of reference (", id, ")", sep=""),
     	     xlab="coverage",
     	     ylab="frequency",
@@ -305,7 +337,7 @@ rrm <- function(){
 ##-- shared --##
 
 kmerPeaks <- function(d, cov.dev=0.25, cov.min=15, k=3, freq.min=15, smooth="histGeom", breaks=100, trim.tail=TRUE){
-    
+
     colnames(d) <- c("covs", "freqs");
 
     peaks.covs <- c()
@@ -333,7 +365,7 @@ kmerPeaks <- function(d, cov.dev=0.25, cov.min=15, k=3, freq.min=15, smooth="his
 
     ## remove last cov - might be a max bin that contains any higher cov freqs as well
     d <- d[-dim(d)[1],]
-    
+
     ## trim tail
     if(trim.tail){
         ## trim tail
@@ -392,7 +424,7 @@ kmerPeaks <- function(d, cov.dev=0.25, cov.min=15, k=3, freq.min=15, smooth="his
 
     ## trim min cov
     d <- d[which(d$covs >= cov.min),]
-    
+
     ## handle error peak (cov 1 or 2)
     if(length(peaks.covs)){
         peaks.err.i <- peaks.covs < cov.min
@@ -412,33 +444,33 @@ kmerPeaks <- function(d, cov.dev=0.25, cov.min=15, k=3, freq.min=15, smooth="his
         peaks.frels <- d$frels[d$covs %in% peaks.covs]
 
         peaks.o <- order(peaks.freqs, decreasing=T)
-        peaks.covs <- peaks.covs[peaks.o]    
-        peaks.freqs <- peaks.freqs[peaks.o]    
+        peaks.covs <- peaks.covs[peaks.o]
+        peaks.freqs <- peaks.freqs[peaks.o]
         peaks.sizes <- peaks.sizes[peaks.o]
         peaks.frels <- peaks.frels[peaks.o]
     }
-        
+
     if(! is.null(peaks.minor.freqs)){
         peaks.minor.frels <- d$frels[d$covs %in% peaks.minor.covs]
-        
+
         peaks.minor.o <- order(peaks.minor.freqs, decreasing=T)
-        peaks.minor.covs <- peaks.minor.covs[peaks.minor.o]    
-        peaks.minor.freqs <- peaks.minor.freqs[peaks.minor.o]    
+        peaks.minor.covs <- peaks.minor.covs[peaks.minor.o]
+        peaks.minor.freqs <- peaks.minor.freqs[peaks.minor.o]
         peaks.minor.sizes <- peaks.minor.sizes[peaks.minor.o]
-        peaks.minor.frels <- peaks.minor.frels[peaks.minor.o] 
-        
+        peaks.minor.frels <- peaks.minor.frels[peaks.minor.o]
+
     }
 
     if(! is.null(peaks.err.freqs)){
         peaks.err.frels <- d$frels[d$covs %in% peaks.err.covs]
-        
+
         peaks.err.o <- order(peaks.err.freqs, decreasing=T)
-        peaks.err.covs <- peaks.err.covs[peaks.err.o]    
-        peaks.err.freqs <- peaks.err.freqs[peaks.err.o]    
+        peaks.err.covs <- peaks.err.covs[peaks.err.o]
+        peaks.err.freqs <- peaks.err.freqs[peaks.err.o]
         peaks.err.sizes <- peaks.err.sizes[peaks.err.o]
-        peaks.err.frels <- peaks.err.frels[peaks.err.o] 
+        peaks.err.frels <- peaks.err.frels[peaks.err.o]
     }
-    
+
     return(
         list(
             data = d,
@@ -525,10 +557,10 @@ smooth.hist <- function(d, breaks=200, geom=FALSE){
         #### ## fixed number of bases
         base <- cov.max^(1/breaks);
         breaks <- cumsum(round(c(1, diff(base^(1:breaks)))));
-        
+
         ## fixed base
         ##breaks <- geomSeries(2^(1/6), cov.max)
-        
+
         ## handle too small breaks
         ## remove too small bins at the start
         breaks <- breaks[which(c(diff(breaks)>3, TRUE))];
@@ -546,7 +578,7 @@ smooth.hist <- function(d, breaks=200, geom=FALSE){
     for(i in 1:length(cumsums)){
         f <- ifelse(i>1, cumsums[i-1]+1, 0)
         t <- cumsums[i]
-        freqs <- c(freqs, sum(d$freqs[f:t]))
+        freqs <- c(freqs, sum(as.numeric(d$freqs[f:t])))
     }
 
     ## smooth freqs
@@ -558,7 +590,7 @@ smooth.hist <- function(d, breaks=200, geom=FALSE){
         frels <- freqs/sf;
     }else{ ## scale geom
         break.intervals <- diff(cov.hist$breaks)
-        frels <- freqs/break.intervals;                                        
+        frels <- freqs/break.intervals;
     }
 
     return(data.frame(covs=cov.hist$mids, freqs=freqs, frels=frels))
@@ -567,13 +599,13 @@ smooth.hist <- function(d, breaks=200, geom=FALSE){
 ####---- DEPRECATED ----####
 
 get_extrema <- function(data,peaks){
-    
+
     cmins=c();
     fmins=c();
     for ( i in 1:length(peaks)){
-        if(i>1){ 
-            p1=peaks[i-1] 
-        }else{ 
+        if(i>1){
+            p1=peaks[i-1]
+        }else{
             p1=0
         }
         p2=peaks[i];
@@ -581,15 +613,15 @@ get_extrema <- function(data,peaks){
         cmins=c(cmins,data[,1][p2p][which.min(data[,2][p2p])])
         fmins=c(fmins,data[,2][p2p][which.min(data[,2][p2p])])
     }
-    
+
                                         ## peak max
     cmaxs=c();
     fmaxs=c();
     for ( i in 1:length(cmins) ){
         p1=cmins[i];
-        if(i==length(cmins)){ 
+        if(i==length(cmins)){
             p2=data[,1][length(data[,1])]
-        }else{ 
+        }else{
             p2=cmins[i+1]
         }
 
@@ -597,25 +629,25 @@ get_extrema <- function(data,peaks){
         cmaxs=c(cmaxs,data[,1][p2p][which.max(data[,2][p2p])])
         fmaxs=c(fmaxs,data[,2][p2p][which.max(data[,2][p2p])])
     }
-    
+
     psizes=c();
     for ( i in 1:length(cmins) ){
         p1= cmins[i];
         if(i==length( cmins)){
             p2=data[,1][length(data[,1])]
-        }else{ 
+        }else{
             p2= cmins[i+1]
         }
 
         p2p=data[,1] >= p1 & data[,1] < p2;
         psizes=c(psizes,sum(apply(data[p2p,], MARGIN=1, FUN=prod)))
     }
-  
+
     cov=cmaxs[which.max(fmaxs)]
     freq=max(fmaxs)
-    
+
     tbp=sum(apply(data, MARGIN=1, FUN=prod))
-    
+
     return(list(cov.maxima=cmaxs, freq.maxima=fmaxs, cov.minima=cmins, freq.minima=fmins, peaksizes=psizes, cov=cov, freq=freq, total=tbp));
 }
 
@@ -649,16 +681,8 @@ peakSizes.add <- function(p, rel=FALSE){
 ## globals
 cl=rainbow(5);
 
-params <- commandArgs(trailingOnly=T);
+#params <- commandArgs(trailingOnly=T);
 
-do.call(run_task, as.list(params));
+#if(length(params) > 0) do.call(run_task, as.list(params));
 
-if(! is.null(warnings())) warnings();
-
-
-
-
-
-    
-
-    
+#if(! is.null(warnings())) warnings();
