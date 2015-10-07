@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Version 0.1.0
+# Author: Thomas Hackl - thackl@lim4.de
+
+usage(){
+cat <<EOF
+Usage:
+  kmer-plot HIST/HASH [HIST/HASH] ...
+
+  Plot kmer distributions either from jellyfish histo oder hash.
+EOF
+exit 0;
+}
+
+check_bin(){
+    hash $1 || { echo "$1 required in PATH" >&2; exit 1;}
+}
+
+## prep
+[[ $# -eq 0 ]] && usage;
+
+SCRIPT=$(basename "$0");
+# Execute getopt
+ARGS=`getopt --name "$SCRIPT" \
+    --options "o:ghV" \
+    -- "$@"`
+
+#Bad arguments
+[ $? -ne 0 ] && exit 1;
+
+# A little magic
+eval set -- "$ARGS"
+
+OUT=kmerPlot.pdf;
+USEGGPLOT=FALSE
+
+# Now go through all the options
+while true; do
+    case "$1" in
+        -o)
+            [ ! -n "$2" ] && (echo "$1: value required" 1>&2 && exit 1);
+            OUT=$2;
+            shift 2;;
+        # -s)
+        #     [ ! -n "$2" ] && (echo "$1: value required" 1>&2 && exit 1);
+        #     SHIFT=$2;
+        #     shift 2;;
+        -g)
+            USEGGPLOT=TRUE;
+            shift;;
+        # -b)
+        #     BED=1;
+        #     shift;;
+        -h)
+            usage && exit 0;;
+
+        -V)
+            grep -m1 'Version' "$0" | sed 's/.*Version\s*//';
+            exit 0;;
+        --)
+            shift
+            break;;
+        *)
+            echo "$1: Unknown option" 1>&2 && exit 1;;
+    esac
+done
+
+
+## prep
+[[ $# -eq 0 ]] && usage;
+
+check_bin Rscript;
+check_bin jellyfish;
+
+BIN="$(dirname "$(readlink -f "$0")")"
+
+Rscript <(cat $BIN/../R/kmer.R; echo '
+params <- commandArgs(trailingOnly=T);
+kmerPlot(params, out="'$OUT'", useggplot='$USEGGPLOT');') $@;
