@@ -5,9 +5,13 @@
 usage(){
 cat <<EOF
 Usage:
-  kmer-plot HIST/HASH [HIST/HASH] ...
+  kmer-plot MODE HIST/HASH [HIST/HASH] ...
 
-  Plot kmer distributions either from jellyfish histo oder hash.
+Plot kmer distributions either from jellyfish histos oder hashes.
+MODEs:
+  density    coverage-frequency distribution of kmers (with peak calling)
+  gcmx
+
 EOF
 exit 0;
 }
@@ -18,8 +22,12 @@ check_bin(){
 
 ## prep
 [[ $# -eq 0 ]] && usage;
-
 SCRIPT=$(basename "$0");
+MODE=$1;
+shift;
+[[ $MODE == "-"* ]] && echo "mode required" && usage;
+
+
 # Execute getopt
 ARGS=`getopt --name "$SCRIPT" \
     --options "o:ghV" \
@@ -31,7 +39,7 @@ ARGS=`getopt --name "$SCRIPT" \
 # A little magic
 eval set -- "$ARGS"
 
-OUT=kmerPlot.pdf;
+OUT="";
 USEGGPLOT=FALSE
 
 # Now go through all the options
@@ -74,6 +82,11 @@ check_bin jellyfish;
 
 BIN="$(dirname "$(readlink -f "$0")")"
 
-Rscript <(cat $BIN/../R/kmer.R; echo '
-params <- commandArgs(trailingOnly=T);
-kmerPlot(params, out="'$OUT'", useggplot='$USEGGPLOT');') $@;
+case "$MODE" in
+    density)
+        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); kmerPlot(params, out="'$OUT'", useggplot='$USEGGPLOT');') $@;;
+    gcmx)
+        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gcmx(params, out="'$OUT'");') $@;;
+    *)
+        echo "unknown mode: $MODE" 1>&2 && usage;;
+esac

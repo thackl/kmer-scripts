@@ -331,7 +331,30 @@ rrm <- function(){
 
 }
 
+##-- gctile --##
 
+gcmx <- function(..., coverage=NULL, out="kmerPlot.pdf"){
+    library(reshape2);
+    library(ggplot2);
+    library(scales);
+
+    mt.file <- c(...);
+    mt <- read.table(mt.file, header=F);
+    mt <- mt[,2:(dim(mt)[2]-1)]; # remove first and last col - aggregate of missing values
+    z.max <- max(mt[,(dim(mt)[2]/5):dim(mt)[2]]);
+    mt.df <- expand.grid(y=1:dim(mt)[1], x=1:dim(mt)[2]);
+    mt.df$z <- unlist(mt);
+
+    #cls <- rev(rainbow(6))
+    #cls <- cls[-1]
+    #cls <- c("darkblue", "cyan", "green", "yellow", "red");
+    cls <- rev(c("#6a0000", "#d40000","#fb8b00", "#fddf01", "#90ff36", "#90fcfc", "#020061"));
+    gg <- ggplot(mt.df) +
+        geom_tile(aes(x=x, y=y, fill=z)) +
+          #  scale_x_continuous(limits=c(0,500)) +
+                scale_fill_gradientn(colours=cls, limits=c(0,z.max), na.value=cls[length(cls)]);
+    ggsave(gg, file=out, width=10, height=6);
+}
 
 
 ##-- shared --##
