@@ -4,85 +4,51 @@ use strict;
 
 use Pod::Usage;
 use Getopt::Long;
+use Log::Log4perl qw(:no_extra_logdie_message);
+use Log::Log4perl::Level;
 
 use Kmer;
 use Jellyfish;
 use Fasta::Parser;
 use Fastq::Parser;
 
-my %opt;
+use threads;
+use Thread::Queue;
 
-=head1 NAME 
+use Data::Dumper;
 
-reads_cov.pl
+our $VERSION = "0.2.0";
 
-=cut
+=head1 NAME
 
-=head1 DESCRIPTION
+kmer-coverage
 
-=cut
+=head1 AUTHOR
 
-=head1 USAGE
+Thomas Hackl - S<thackl@lim4.de>
 
-  $ pv <READS.f[aq]> | kmer-coverage --hash <JELLYFISH HASH>  > READS.cov
+=head1 SYNOPSIS
 
-=cut
-
-=head1 CHANGELOG
-
-=over
-
-=item [PodFix] USAGE, obsolete parameter ...
-
-=back
-
-=cut
+  $ pv <READS.f[aq]> | kmer-coverage -j <JELLYFISH HASH>  > READS.cov
 
 =head1 OPTIONS
 
 =over 25
 
-=cut
+=item -j|--jf=<file>
 
-=item -k|--hash=<file>
+Path to the jellyfish kmer hash file.
 
-path to the jellyfish kmer hash file. 
+=item -L|--no-load [OFF]
 
-=cut
+Disable preloading of hash into memory, recommended for small queries or
+subsequent runs on same hash (already mapped to memory).
 
-$opt{'hash|k=s'} = \(my $opt_hash);
+=item [--help]
 
-=item --reads=<file>
+Show help
 
-the read file in fastq/fasta format, default is STDIN, set explicitly with '-'.
-
-=cut
-
-$opt{'reads=s'} = \(my $opt_reads = undef);
-
-=item [--[no]verbose] 
-
-verbose is default.
-
-=cut
-
-$opt{'verbose!'} = \(my $opt_verbose = 1);
-
-=item [--help] 
-
-show help
-
-=cut
-
-$opt{'help|?'} = \(my $opt_help);
-
-=item [--man] 
-
-show man page
-
-=cut
-
-$opt{'man'} = \(my $opt_man);
+=item [--debug]
 
 =back
 
@@ -95,63 +61,218 @@ Output: one line per read, 3 fields (id, median count, per-base counts) tab sepa
 
 =cut
 
-
-GetOptions(%opt) or pod2usage(1);
-
-pod2usage(1) if($opt_help);
-pod2usage(-verbose => 99, -sections => "NAME|DESCRIPTION|USAGE|OPTIONS|LIMITATIONS|AUTHORS") if($opt_man);
-
-pod2usage(-msg => "--hash required", -verbose => 0) unless ($opt_hash);
-$opt_reads = undef if (defined $opt_reads && $opt_reads eq '-');
-
-unless(defined $opt_reads){
-	$opt_verbose && print STDERR "Reading from STDIN\n";
-}
+my %opt = init();
+my $L = $opt{logger};
 
 my $fp;
 my $is_fastq;
 # try fastq;
-if($fp = Fastq::Parser->new(file => $opt_reads)->check_format){
-	$is_fastq = 1;
-}elsif($fp = Fasta::Parser->new(file => $opt_reads)->check_format){
-	$is_fastq = 0;
+if($fp = Fastq::Parser->new(fh => $opt{ifh})->check_format){
+    $is_fastq = 1;
+}elsif($fp = Fasta::Parser->new(fh => $opt{ifh})->check_format){
+    $is_fastq = 0;
 }else{
-	die "--reads $opt_reads neither FASTQ nor FASTA";
+    $L->logdie("--in $opt{in} neither FASTQ nor FASTA");
 }
 
-
+# auto-detect hash kmer size
 my $jf = Jellyfish->new();
-#my $stats = $jf->stats([$opt_hash]);
-#print $stats;
+my $jf_info = $jf->run(['info', '--json', $opt{'jf'}]);
+$jf_info =~ m/"key_len" : (\d+)/s;
+$opt{'kmer_size'} = $1/2;
 
-my $kh = Kmer->new(kmer_size => 19);
-my @kmers;
+# load kmer handler
+my $kh = Kmer->new(kmer_size => $opt{'kmer_size'});
 
-while(my $fs = $fp->next_seq){
-	@kmers = $kh->cmerize($fs->seq);
-	my @covs = $jf->query([$opt_hash], kmers => \@kmers, table =>0);
-	my $median = (sort{$a<=>$b}@covs)[@covs/2];
-	printf "%s\t%s\t%s\n", $fs->id, $median, join (" ", @covs);
+# load hash
+unless ($opt{no_load}) {
+    $L->info("loading jellyfish hash");
+    qx(cat $opt{jf} > /dev/null);
+}
+
+my $Qw = Thread::Queue->new();
+my $Qo = Thread::Queue->new();
+
+my @thread_worker = map{
+    threads->create(\&thread_worker)
+} 1..$opt{threads};
+# launch output thread
+my $thread_out = threads->create(\&thread_out);
+
+$L->info("processing sequences");
+my $i=-1;
+while(1){
+    next if $Qw->pending > $opt{threads};
+    $L->debug("# pending: ", $Qw->pending,"\n");
+    my $fs = $fp->next_seq || last;
+    $Qw->enqueue(++$i, $fs);
+}
+
+# all jobs submitted
+$Qw->end;
+$_->join for @thread_worker;
+
+# all workers done, close Result queue;
+$Qo->end;
+$thread_out->join;
+
+
+
+# Using jellyfish SWIG
+
+# jellyfish swig lib - slower than query by command
+#use lib "/home/thackl/software/jellyfish/perl5lib";
+#use jellyfish;
+# my $qf = jellyfish::QueryMerFile->new($opt{jf});
+# jellyfish swig bind, slower than query by command
+#    foreach my $k ( @kmers) {
+#    #    print $fs->id,"\t", $k,"\n";
+#        print $fs->id,"\t", $qf->get(jellyfish::MerDNA->new($k)) ,"\n";
+#    }
+
+
+##- Methods ------------------------------------------------------------------##
+
+=head1 Methods
+
+=cut
+
+sub process_job{
+    my ($fs) = @_;
+    my @kmers = $kh->cmerize($fs->seq);
+
+    my @covs = $jf->query([$opt{jf}], kmers => \@kmers, table =>0);
+    return [$fs, \@covs];
+}
+
+sub output_job{
+    my ($fs, $covs) = @{$_[0]};
+    foreach my $k ( @$covs) {
+        print $fs->id,"\t", $k,"\n";
+    }
 }
 
 
 
+## methods
+sub thread_worker{
+    my $tid = threads->tid();
+    $L->debug("# launched t$tid\n");
+    while (1){
+        my ($j, $c) = $Qw->dequeue(2);
+        return unless defined $j; # no more work
+
+        $L->debug("# t$tid j$j\n");
+        # process $c
+        my $r = process_job($c, $j);
+
+        # enqueue result
+        $Qo->enqueue($j, $r);
+    }
+}
+
+
+sub thread_out{
+    my $tid = threads->tid();
+    my %buf;
+    my $jout = 0;
+    while (1){
+        my ($j, $c) = $Qo->dequeue(2);
+        unless (defined $j){ # no more work
+            # emtpy buffer
+            die "Incomplete output from threads\n" if %buf;
+            last;
+        }
+
+        $L->debug("# $c $j ($jout)\n");
+
+        if ($j == $jout) {
+            output_job($c, $j);
+            while (exists $buf{++$jout}) { # look ahead in buffer
+                output_job($buf{$jout}, $jout, 1);
+                delete $buf{$jout};
+            }
+        }else {
+            $buf{$j} = $c;
+        }
+    }
+}
 
 
 
+=head2 init
 
+=cut
 
+sub init{
+    no warnings 'qw';
 
+    my (%p) = @_;
 
+    # GetOptions
+    my $argv = join(" ", @ARGV);
 
+    # logger
+    Log::Log4perl->init( \(q(
+        log4perl.rootLogger                     = INFO, Screen
+        log4perl.appender.Screen                = Log::Log4perl::Appender::Screen
+        log4perl.appender.Screen.stderr         = 1
+        log4perl.appender.Screen.layout         = PatternLayout
+        log4perl.appender.Screen.layout.ConversionPattern = [%d{yy-MM-dd HH:mm:ss}] [kmer-coverage] %m%n)));
 
+    my %def = ();
+    my %opt = (threads => 1);
+    my $L = $opt{logger} = Log::Log4perl->get_logger();
 
+    GetOptions(
+        \%opt, qw(
+                     jf|j=s
+                     in|reads=s
+                     no_load|no-load|L!
+                     threads|t=i
+                     version|V!
+                     debug|D!
+                     help|h!
+             )
+    ) or $L->logdie('Failed to "GetOptions"');
 
+    $opt{argv} = $argv; # store it just in case
 
+    # help
+    $opt{help} && pod2usage(1);
 
+    # version
+    if ($opt{version}) {
+        print"$VERSION\n";
+        exit 0;
+    }
 
+    $opt{in} = @ARGV ? shift @ARGV : '-';
 
+    $L->logdie("unused argument: @ARGV") if @ARGV;
 
+    %opt = (%def, %opt);
 
+    # required stuff
+    for (qw(jf)) {
+        if (ref $opt{$_} eq 'ARRAY') {
+            pod2usage("required: --$_") unless @{$opt{$_}}
+        } else {
+            pod2usage("required: --$_") unless defined ($opt{$_})
+        }
+    }
 
+    if ($opt{in} ne '-') {
+        open($opt{ifh}, '<', $opt{in}) or $L->logdie;
+    } else {
+        $L->info("reading STDIN");
+        $opt{in} = \*STDIN;
+    }
+    # debug level
+    $L->level($DEBUG) if $opt{debug};
+    $L->debug('Verbose level set to DEBUG');
 
+    $L->debug(Dumper(\%opt));
+
+    return %opt;
+}
