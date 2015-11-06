@@ -10,7 +10,8 @@ Usage:
 Plot kmer distributions either from jellyfish histos oder hashes.
 MODEs:
   density    coverage-frequency distribution of kmers (with peak calling)
-  gcmx
+  gcmx       coverage-frequency-gc as heatmap; reads KAT gcp tables;
+  gccov      length-gc-coverage of contigs in blobology like plot
 
 EOF
 exit 0;
@@ -39,7 +40,7 @@ ARGS=`getopt --name "$SCRIPT" \
 # A little magic
 eval set -- "$ARGS"
 
-OUT="";
+OUT="kmerPlot.pdf";
 USEGGPLOT=FALSE
 
 # Now go through all the options
@@ -87,6 +88,8 @@ case "$MODE" in
         Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); kmerPlot(params, out="'$OUT'", useggplot='$USEGGPLOT');') $@;;
     gcmx)
         Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gcmx(params, out="'$OUT'");') $@;;
+    gccov)
+        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gccov(params, out="'$OUT'");') $@;;
     *)
         echo "unknown mode: $MODE" 1>&2 && usage;;
 esac

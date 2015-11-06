@@ -356,6 +356,64 @@ gcmx <- function(..., coverage=NULL, out="kmerPlot.pdf"){
     ggsave(gg, file=out, width=10, height=6);
 }
 
+##-- gccov --#
+
+gccov <- function(..., out="kmerPlot.pdf", length.min=1000){
+    library(reshape2);
+    library(ggplot2);
+    library(scales);
+    library(gridExtra);
+
+    df.file <- c(...);
+    df <- read.table(df.file, header=F);
+    colnames(df) <- c("contig","length","GC","coverage");
+    df <- subset(df, GC > 0 & GC < 1); # ignore poly AAAA,GGGG, ..
+
+    cls <- rev(c("#6a0000", "#d40000","#fb8b00", "#fddf01", "#3fcc00", "#06deea", "#020061"));
+    cls.na <- cls[1];
+
+    z.max <- max(df$length)*1.5;
+    z.min <- min(df$length);
+    y.max <- 500#quantile(df$coverage, c(.5))*3
+
+    ## all, incl repeats
+    gg1 <- ggplot(df) +
+        geom_point(aes(x=GC, y=coverage, colour=length, size=log10(length), alpha=.7)) +
+            geom_point(aes(x=GC, y=coverage, size=1), colour="grey30", alpha=.8) +
+                #scale_y_continuous(trans="log", limits=c(10, NA)) +
+                    scale_colour_gradientn(colours=cls,
+                                       limits=c(500,z.max),
+                                       trans="log",
+                                       na.value=cls.na,
+                                       breaks=c(1e+3,1e+4,1e+5,1e+6,1e+7,1e+8),
+                                       labels=c("1 kbp","10 kbp","100 kbp","1 Mbp","10 Mbp", "100 Mbp")
+                                       );
+
+
+    ## no repeats, min length plot
+    x.min <- min(df$GC);
+    x.max <- max(df$GC);
+    #df <- subset(df, length >= length.min);
+    gg3 <- ggplot(df) +
+        geom_point(aes(x=GC, y=coverage, colour=length, size=log10(length), alpha=.7)) +
+        geom_point(aes(x=GC, y=coverage, size=1), colour="grey30", alpha=.8) +
+            #scale_y_continuous(trans="log", limits=c(0.1,y.max)) +
+            ylim(0,y.max) +
+                xlim(x.min, x.max) +
+                scale_colour_gradientn(colours=cls,
+                                       limits=c(500,z.max),
+                                       trans="log",
+                                       na.value=cls.na,
+                                       breaks=c(1e+3,1e+4,1e+5,1e+6,1e+7,1e+8),
+                                       labels=c("1 kbp","10 kbp","100 kbp","1 Mbp","10 Mbp", "100 Mbp")
+                                       );
+
+    pdf(out, width=10, height=6);
+    print(gg1)
+    print(gg3)
+    dev.off();
+
+}
 
 ##-- shared --##
 
