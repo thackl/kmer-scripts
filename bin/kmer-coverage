@@ -6,6 +6,7 @@ use Pod::Usage;
 use Getopt::Long;
 use Log::Log4perl qw(:no_extra_logdie_message);
 use Log::Log4perl::Level;
+use File::Temp 'tempdir';
 
 use Kmer;
 use Jellyfish;
@@ -17,7 +18,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.2.0";
+our $VERSION = "0.3.0";
 
 =head1 NAME
 
@@ -75,14 +76,11 @@ if($fp = Fastq::Parser->new(fh => $opt{ifh})->check_format){
     $L->logdie("--in $opt{in} neither FASTQ nor FASTA");
 }
 
+# in thread and with $jf->get_kmer_size
 # auto-detect hash kmer size
-my $jf = Jellyfish->new();
-my $jf_info = $jf->run(['info', '--json', $opt{'jf'}]);
-$jf_info =~ m/"key_len" : (\d+)/s;
-$opt{'kmer_size'} = $1/2;
-
-# load kmer handler
-my $kh = Kmer->new(kmer_size => $opt{'kmer_size'});
+#my $jf_info = $jf->run(['info', '--json', $opt{'jf'}]);
+#$jf_info =~ m/"key_len" : (\d+)/s;
+#$opt{'kmer_size'} = $1/2;
 
 # load hash
 unless ($opt{no_load}) {
@@ -93,6 +91,16 @@ unless ($opt{no_load}) {
 my $Qw = Thread::Queue->new();
 my $Qo = Thread::Queue->new();
 
+my $tmp = tempdir(
+    "kmer-coverage-XXXXXX",
+    DIR => $opt{tmp},
+    CLEANUP => 1,#1 #$opt{keep} ? 0 : 1,
+);
+
+my $jf = Jellyfish->new();
+my $ks = $jf->get_kmer_size([$opt{jf}]);
+# my $kh = Kmer->new(kmer_size => $ks);
+
 my @thread_worker = map{
     threads->create(\&thread_worker)
 } 1..$opt{threads};
@@ -102,10 +110,26 @@ my $thread_out = threads->create(\&thread_out);
 $L->info("processing sequences");
 my $i=-1;
 while(1){
-    next if $Qw->pending > $opt{threads};
+    if ( $Qw->pending > $opt{threads}+2){
+        sleep 1; next;
+    };
+
     $L->debug("# pending: ", $Qw->pending,"\n");
-    my $fs = $fp->next_seq || last;
-    $Qw->enqueue(++$i, $fs);
+    my @fbin;
+    my $flen = 0;
+    my $eof = 1;
+    while (my $fs = $fp->next_seq){
+        push @fbin, $fs;
+        $flen += length($fs->seq);
+        if ($flen > $opt{chunk_size}){
+            $eof=0;
+            last;
+        }
+    }
+
+    $L->debug("# chunk: ".@fbin." $flen $opt{chunk_size}\n");
+    $Qw->enqueue(++$i, \@fbin);
+    last if $eof; # eof
 }
 
 # all jobs submitted
@@ -117,38 +141,16 @@ $Qo->end;
 $thread_out->join;
 
 
-
-# Using jellyfish SWIG
-
-# jellyfish swig lib - slower than query by command
-#use lib "/home/thackl/software/jellyfish/perl5lib";
-#use jellyfish;
-# my $qf = jellyfish::QueryMerFile->new($opt{jf});
-# jellyfish swig bind, slower than query by command
-#    foreach my $k ( @kmers) {
-#    #    print $fs->id,"\t", $k,"\n";
-#        print $fs->id,"\t", $qf->get(jellyfish::MerDNA->new($k)) ,"\n";
-#    }
-
-
 ##- Methods ------------------------------------------------------------------##
 
 =head1 Methods
 
 =cut
 
-sub process_job{
-    my ($fs) = @_;
-    my @kmers = $kh->cmerize($fs->seq);
-
-    my @covs = $jf->query([$opt{jf}], kmers => \@kmers, table =>0);
-    return [$fs, \@covs];
-}
-
 sub output_job{
-    my ($fs, $covs) = @{$_[0]};
+    my ($covs) = @_;
     foreach my $k ( @$covs) {
-        print $fs->id,"\t", $k,"\n";
+        print $k,"\n";
     }
 }
 
@@ -158,16 +160,36 @@ sub output_job{
 sub thread_worker{
     my $tid = threads->tid();
     $L->debug("# launched t$tid\n");
+    my $tfa = "$tmp/$tid.fa";
+
     while (1){
-        my ($j, $c) = $Qw->dequeue(2);
+        my ($j, $fbin) = $Qw->dequeue(2);
         return unless defined $j; # no more work
+
+        my @knum;
+        open(TMP, '>', $tfa) or die $!;
+        foreach my $fs (@$fbin) {
+            print TMP $fs;
+            push @knum, length($fs->seq) - $ks + 1;
+        }
+        close TMP;
 
         $L->debug("# t$tid j$j\n");
         # process $c
-        my $r = process_job($c, $j);
+        my @covs;
+        open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
+        for (my $j=0; $j<@knum; $j++) {
+            my $c = $fbin->[$j]->id()."\t";
+            for (my $i=0; $i<$knum[$j]; $i++) {
+                $c.= <JF>;
+            }
+            chomp($c);
+            $c =~ tr/\n/ /;
+            push @covs, $c;
+        }
 
         # enqueue result
-        $Qo->enqueue($j, $r);
+        $Qo->enqueue($j, \@covs);
     }
 }
 
@@ -221,13 +243,18 @@ sub init{
         log4perl.appender.Screen.layout.ConversionPattern = [%d{yy-MM-dd HH:mm:ss}] [kmer-coverage] %m%n)));
 
     my %def = ();
-    my %opt = (threads => 1);
+    my %opt = (
+        threads => 1,
+        tmp => (-d '/dev/shm' ? '/dev/shm' : '/tmp'),
+        chunk_size => 5_000_000,
+    );
     my $L = $opt{logger} = Log::Log4perl->get_logger();
 
     GetOptions(
         \%opt, qw(
                      jf|j=s
                      in|reads=s
+                     tmp=s
                      no_load|no-load|L!
                      threads|t=i
                      version|V!
