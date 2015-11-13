@@ -101,6 +101,13 @@ my $jf = Jellyfish->new();
 my $ks = $jf->get_kmer_size([$opt{jf}]);
 # my $kh = Kmer->new(kmer_size => $ks);
 
+if ($opt{adjust}) {
+    $L->info("computing adjustment hash");
+    qx(jellyfish count -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
+    $opt{jfa} = "$tmp/adjust.jf";
+}
+
+
 my @thread_worker = map{
     threads->create(\&thread_worker)
 } 1..$opt{threads};
@@ -140,6 +147,7 @@ $_->join for @thread_worker;
 $Qo->end;
 $thread_out->join;
 
+$L->info("done");
 
 ##- Methods ------------------------------------------------------------------##
 
@@ -177,15 +185,38 @@ sub thread_worker{
         $L->debug("# t$tid j$j\n");
         # process $c
         my @covs;
-        open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
-        for (my $j=0; $j<@knum; $j++) {
-            my $c = $fbin->[$j]->id()."\t";
-            for (my $i=0; $i<$knum[$j]; $i++) {
-                $c.= <JF>;
+        if ($opt{adjust}) {
+            open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
+            open(JFA, "jellyfish query -s $tfa $opt{jfa} | cut -d' ' -f2 |") or die $!;
+            for (my $j=0; $j<@knum; $j++) {
+                my $cs = '';
+                my %cmed;
+                for (my $i=0; $i<$knum[$j]; $i++) {
+                    my $ct = <JF>;
+                    my $ca = <JFA>;
+                    chomp($ct);
+                    chomp($ca);
+                    my $c = int(($ct/$ca)+.5);
+                    $cmed{$c}++;
+                    $cs.= $c." ";
+                }
+                chop($cs);
+                push @covs, $fbin->[$j]->id()."\t".hist_med(\%cmed)."\t".hist_repr_anscombe(\%cmed)."\t".$cs;
             }
-            chomp($c);
-            $c =~ tr/\n/ /;
-            push @covs, $c;
+        } else {
+            open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
+            for (my $j=0; $j<@knum; $j++) {
+                my $cs = '';
+                my %cmed;
+                for (my $i=0; $i<$knum[$j]; $i++) {
+                    my $c = <JF>;
+                    chomp($c);
+                    $cmed{$c}++;
+                    $cs.=$c." ";
+                }
+                chop($cs);
+                push @covs, $fbin->[$j]->id()."\t".hist_med(\%cmed)."\t".hist_repr_anscombe(\%cmed)."\t".$cs;
+            }
         }
 
         # enqueue result
@@ -255,6 +286,7 @@ sub init{
                      jf|j=s
                      in|reads=s
                      tmp=s
+                     adjust!
                      no_load|no-load|L!
                      threads|t=i
                      version|V!
