@@ -19,7 +19,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.0";
+our $VERSION = "0.4.1";
 
 =head1 NAME
 
@@ -104,7 +104,7 @@ my $ks = $jf->get_kmer_size([$opt{jf}]);
 
 if ($opt{adjust}) {
     $L->info("computing adjustment hash");
-    qx(jellyfish count -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
+    qx(jellyfish count -t $opt{threads} -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
     $opt{jfa} = "$tmp/adjust.jf";
 }
 
