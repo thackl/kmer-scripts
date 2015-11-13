@@ -7,6 +7,7 @@ use Getopt::Long;
 use Log::Log4perl qw(:no_extra_logdie_message);
 use Log::Log4perl::Level;
 use File::Temp 'tempdir';
+use List::Util;
 
 use Kmer;
 use Jellyfish;
@@ -18,7 +19,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.3.0";
+our $VERSION = "0.4.0";
 
 =head1 NAME
 
@@ -53,10 +54,10 @@ Show help
 
 =back
 
-Output: one line per read, 3 fields (id, median count, per-base counts) tab separated, counts space separated
+Output: one line per read, 3 fields (id, representative count, median count, per-base counts) tab separated, counts space separated
 
-  read1   120   1034 1223 1212 1234 1002 878 676 424 ...
-  read2   56    68 54 48 44 56 ...
+  read1   110   120   1034 1223 1212 1234 1002 878 676 424 ...
+  read2   52    56    68 54 48 44 56 ...
 
 =head1 CODE
 
@@ -334,4 +335,123 @@ sub init{
     $L->debug(Dumper(\%opt));
 
     return %opt;
+}
+
+
+
+sub hist_med{
+    my ($h) = @_;
+    my @k = sort {$a <=> $b} keys %$h;
+    my $tot_sum = 0;
+    $tot_sum += $_ for values %$h;
+    my $med_sum = $tot_sum/2;
+
+    my $cum_sum = 0;
+    my $med;
+
+    foreach my $k (@k) {
+        $cum_sum += $h->{$k};
+        if ($cum_sum > $med_sum){
+            $med = $k;
+            last;
+        }
+    }
+    return $med;
+}
+
+
+=head
+
+First hist is transformed and approximately aggregated into a discrete hist in
+anscombe space (anscombe: poisson -> gauss, sd=sqrt(mean) -> sd=1). The max of
+this hist represents a +-1 anscombe space approximation of the untransformed
+poisson max, which is would require expensive computation with adative sliding
+window to account for mean~variance dependency.
+
+=cut
+
+sub hist_repr_anscombe{
+    my ($h) = @_;
+
+    # anscombe transform, aggregate
+    my %ansc;
+    my $max = -1;
+    my $ansc_max = -1;
+    foreach my $k (keys %$h){
+        my $ka = int(anscombe($k)+.5);
+        $ansc{$ka}+= $h->{$k} || 0;
+        $ansc_max = $ka if $ka > $ansc_max;
+        $max = $k if $k > $max;
+    }
+
+    my $kmax_ansc = -1;
+    my $vmax_ansc = -1;
+    while (my ($k, $v) = each %ansc) {
+        if ( $v > $vmax_ansc) {
+            $kmax_ansc = $k;
+            $vmax_ansc = $v;
+        }
+    }
+
+    # true max should be in +-1 anscombe space bin
+    my $kmax_approx = int(anscombe_inv($kmax_ansc));
+    my $kmax_approx_min = int(anscombe_inv($kmax_ansc-1)+.5);
+    my $kmax_approx_max = int(anscombe_inv($kmax_ansc+1)+.5);
+
+    my $kx = -1;
+    my $vx = -1;
+
+    for (my $i=$kmax_approx_min; $i<=$kmax_approx_max; $i++) {
+        my $sd = int(sqrt($i));
+        my $sd_min = $i-$sd;
+        $sd = 0 if $sd_min < 0;
+        my $sd_max = $i+$sd;
+        $sd = $max if $sd_max > $max;
+
+        my $z = List::Util::sum(map{$_ || 0}@{$h}{$sd_min..$sd_max}); # make undef -> 0
+        if ($z > $vx){ # update max
+            $kx = $i;
+            $vx = $z;
+        }
+    }
+    return $kx;
+}
+
+=head2 anscombe / anscombe_inv
+
+Anscombe transform x.
+
+=cut
+
+sub anscombe{
+    2 * sqrt($_[0] + 3/8)
+}
+
+sub anscombe_inv{
+    ($_[0]/2)**2 - 3/8
+}
+
+
+
+sub hist_repr{
+    #return 0;
+    my ($h) = @_;
+    my $max = List::Util::max(keys %$h);
+    print STDERR "$max\n";
+    my $kx = -1;
+    my $vx = -1;
+    for (my $i=0; $i<=$max; $i++) {
+        my $sd = int(sqrt($i));
+        my $sd_min = $i-$sd;
+        $sd = 0 if $sd_min < 0;
+        my $sd_max = $i+$sd;
+        $sd = $max if $sd_max > $max;
+
+        my $z = List::Util::sum(map{$_ || 0}@{$h}{$sd_min..$sd_max}); # make undef -> 0
+        if ($z > $vx){ # update max
+            $kx = $i;
+            $vx = $z;
+        }
+    }
+    return $kx;
 }
