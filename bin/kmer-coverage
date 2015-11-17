@@ -19,7 +19,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.2";
+our $VERSION = "0.4.3";
 
 =head1 NAME
 
@@ -178,6 +178,7 @@ sub thread_worker{
         my @knum;
         open(TMP, '>', $tfa) or die $!;
         foreach my $fs (@$fbin) {
+            $fs->{seq} =~ tr/N/G/;
             print TMP $fs;
             push @knum, length($fs->seq) - $ks + 1;
         }
@@ -194,9 +195,16 @@ sub thread_worker{
                 my %cmed;
                 for (my $i=0; $i<$knum[$j]; $i++) {
                     my $ct = <JF>;
+                    if (! defined $ct) {
+                        print STDERR "expected mers: $knum[$j]\n";
+                        print STDERR "seq num: ".($j+1)."\n";
+                        print STDERR "fasta: $tfa\n";
+                        exit;
+                    }
                     my $ca = <JFA>;
                     chomp($ct);
                     chomp($ca);
+                    next unless $ca; # 0 count derives from Ns
                     my $c = int(($ct/$ca)+.5);
                     $cmed{$c}++;
                     $cs.= $c." ";
