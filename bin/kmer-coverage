@@ -19,7 +19,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.1";
+our $VERSION = "0.4.2";
 
 =head1 NAME
 
@@ -95,7 +95,7 @@ my $Qo = Thread::Queue->new();
 my $tmp = tempdir(
     "kmer-coverage-XXXXXX",
     DIR => $opt{tmp},
-    CLEANUP => 1,#1 #$opt{keep} ? 0 : 1,
+    CLEANUP => $opt{keep} ? 0 : 1,
 );
 
 my $jf = Jellyfish->new();
@@ -104,7 +104,7 @@ my $ks = $jf->get_kmer_size([$opt{jf}]);
 
 if ($opt{adjust}) {
     $L->info("computing adjustment hash");
-    qx(jellyfish count -t $opt{threads} -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
+    qx(jellyfish count -C -t $opt{threads} -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
     $opt{jfa} = "$tmp/adjust.jf";
 }
 
@@ -287,6 +287,7 @@ sub init{
                      jf|j=s
                      in|reads=s
                      tmp=s
+                     keep!
                      adjust!
                      no_load|no-load|L!
                      threads|t=i
