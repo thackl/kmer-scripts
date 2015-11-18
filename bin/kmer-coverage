@@ -19,7 +19,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.3";
+our $VERSION = "0.4.4";
 
 =head1 NAME
 
@@ -191,8 +191,10 @@ sub thread_worker{
             open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
             open(JFA, "jellyfish query -s $tfa $opt{jfa} | cut -d' ' -f2 |") or die $!;
             for (my $j=0; $j<@knum; $j++) {
-                my $cs = '';
-                my %cmed;
+                my $cts = '';
+                my $cas = '';
+                my %ctmed;
+                my %camed;
                 for (my $i=0; $i<$knum[$j]; $i++) {
                     my $ct = <JF>;
                     if (! defined $ct) {
@@ -201,16 +203,25 @@ sub thread_worker{
                         print STDERR "fasta: $tfa\n";
                         exit;
                     }
-                    my $ca = <JFA>;
+                    my $cr = <JFA>;
                     chomp($ct);
-                    chomp($ca);
-                    next unless $ca; # 0 count derives from Ns
-                    my $c = int(($ct/$ca)+.5);
-                    $cmed{$c}++;
-                    $cs.= $c." ";
+                    chomp($cr);
+                    next unless $cr; # 0 count derives from Ns
+                    my $ca = int(($ct/$cr)+.5);
+                    $ctmed{$ct}++;
+                    $camed{$ca}++;
+                    $cts.= $ct." ";
+                    $cas.= $ca." ";
                 }
-                chop($cs);
-                push @covs, $fbin->[$j]->id()."\t".hist_med(\%cmed)."\t".hist_repr_anscombe(\%cmed)."\t".$cs;
+                chop($cts);
+                chop($cas);
+                push @covs, $fbin->[$j]->id()."\t".
+                    hist_med(\%ctmed)."\t".
+                    hist_repr_anscombe(\%ctmed)."\t".
+                    hist_med(\%camed)."\t".
+                    hist_repr_anscombe(\%camed)."\t".
+                    $cts."\t".
+                    $cas;
             }
         } else {
             open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
