@@ -13,13 +13,14 @@ use Kmer;
 use Jellyfish;
 use Fasta::Parser;
 use Fastq::Parser;
+use Handy;
 
 use threads;
 use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.4";
+our $VERSION = "0.4.5";
 
 =head1 NAME
 
@@ -334,7 +335,7 @@ sub init{
     %opt = (%def, %opt);
 
     # required stuff
-    for (qw(jf)) {
+    for (qw(jf in)) {
         if (ref $opt{$_} eq 'ARRAY') {
             pod2usage("required: --$_") unless @{$opt{$_}}
         } else {
@@ -342,8 +343,10 @@ sub init{
         }
     }
 
+    Handy::require_exe("jellyfish") or $L->logdie("jellyfish not in PATH");
+
     if ($opt{in} ne '-') {
-        open($opt{ifh}, '<', $opt{in}) or $L->logdie;
+        open($opt{ifh}, '<', $opt{in}) or $L->logdie("$opt{in}: $!");
     } else {
         $L->info("reading STDIN");
         $opt{in} = \*STDIN;
