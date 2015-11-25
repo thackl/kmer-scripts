@@ -20,7 +20,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.5";
+our $VERSION = "0.4.6";
 
 =head1 NAME
 
@@ -100,7 +100,7 @@ my $tmp = tempdir(
 );
 
 my $jf = Jellyfish->new();
-my $ks = $jf->get_kmer_size([$opt{jf}]);
+my $ks = $jf->get_kmer_size($opt{jf});
 # my $kh = Kmer->new(kmer_size => $ks);
 
 if ($opt{adjust}) {
@@ -142,11 +142,19 @@ while(1){
 }
 
 # all jobs submitted
-$Qw->end;
+# $Qw->end; only works with very recent Thread::Queue
+
+my @term = (undef) x ($opt{threads}*2);
+$Qw->enqueue(@term);
+
 $_->join for @thread_worker;
 
 # all workers done, close Result queue;
-$Qo->end;
+# $Qo->end; # only works with very recent Thread::Queue
+
+@term = (undef) x 2;
+$Qo->enqueue(@term);
+
 $thread_out->join;
 
 $L->info("done");
@@ -180,7 +188,7 @@ sub thread_worker{
         open(TMP, '>', $tfa) or die $!;
         foreach my $fs (@$fbin) {
             $fs->{seq} =~ tr/N/G/;
-            print TMP $fs;
+            print TMP "$fs";
             push @knum, length($fs->seq) - $ks + 1;
         }
         close TMP;
@@ -224,6 +232,8 @@ sub thread_worker{
                     $cts."\t".
                     $cas;
             }
+            close JF;
+            close JFA;
         } else {
             open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
             for (my $j=0; $j<@knum; $j++) {
@@ -238,6 +248,7 @@ sub thread_worker{
                 chop($cs);
                 push @covs, $fbin->[$j]->id()."\t".hist_med(\%cmed)."\t".hist_repr_anscombe(\%cmed)."\t".$cs;
             }
+            close JF;
         }
 
         # enqueue result
