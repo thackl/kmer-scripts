@@ -20,7 +20,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.6";
+our $VERSION = "0.4.7";
 
 =head1 NAME
 
@@ -188,7 +188,7 @@ sub thread_worker{
         open(TMP, '>', $tfa) or die $!;
         foreach my $fs (@$fbin) {
             $fs->{seq} =~ tr/N/G/;
-            print TMP "$fs";
+            print TMP $fs->string();
             push @knum, length($fs->seq) - $ks + 1;
         }
         close TMP;
