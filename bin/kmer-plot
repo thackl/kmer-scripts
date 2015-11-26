@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Version 0.1.0
+# Version 0.1.1
 # Author: Thomas Hackl - thackl@lim4.de
 
 usage(){
 cat <<EOF
 Usage:
-  kmer-plot MODE HIST/HASH [HIST/HASH] ...
+  kmer-plot MODE ...
 
 Plot kmer distributions either from jellyfish histos oder hashes.
 MODEs:
@@ -40,8 +40,9 @@ ARGS=`getopt --name "$SCRIPT" \
 # A little magic
 eval set -- "$ARGS"
 
-OUT="kmerPlot.pdf";
+OUT="kmer-plot-$MODE.pdf";
 USEGGPLOT=FALSE
+HELP=0;
 
 # Now go through all the options
 while true; do
@@ -61,8 +62,8 @@ while true; do
         #     BED=1;
         #     shift;;
         -h)
-            usage && exit 0;;
-
+            HELP=1;
+            shift;;
         -V)
             grep -m1 'Version' "$0" | sed 's/.*Version\s*//';
             exit 0;;
@@ -76,7 +77,9 @@ done
 
 
 ## prep
-[[ $# -eq 0 ]] && usage;
+if [[ $# -eq 0 || $HELP -gt 1 ]]; then
+    echo "help missing" && exit 0;
+fi;
 
 check_bin Rscript;
 check_bin jellyfish;
