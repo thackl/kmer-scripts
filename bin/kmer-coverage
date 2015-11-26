@@ -20,7 +20,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.7";
+our $VERSION = "0.4.8";
 
 =head1 NAME
 
@@ -468,7 +468,12 @@ sub hist_repr_anscombe{
         my $sd_max = $i+$sd;
         $sd = $max if $sd_max > $max;
 
-        my $z = List::Util::sum(map{$_ || 0}@{$h}{$sd_min..$sd_max}); # make undef -> 0
+        my $z = 0;
+        for (my $sdi = $sd_min; $sdi <= $sd_max; $sdi++) {
+            next unless exists $h->{$sdi};
+            $z+= $h->{$sdi};
+        }
+
         if ($z > $vx){ # update max
             $kx = $i;
             $vx = $z;
