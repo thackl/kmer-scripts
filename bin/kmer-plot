@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version 0.1.1
+# Version 0.2.0
 # Author: Thomas Hackl - thackl@lim4.de
 
 usage(){
@@ -93,6 +93,8 @@ case "$MODE" in
         Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gcmx(params, out="'$OUT'");') $@;;
     gccov)
         Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gccov(params, out="'$OUT'");') $@;;
+    seqcov)
+        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); seqcov(params, out="'$OUT'");') $@;;
     *)
         echo "unknown mode: $MODE" 1>&2 && usage;;
 esac

@@ -415,6 +415,66 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000){
 
 }
 
+hist_count <- function (x){
+  dt <- as.data.frame(table(x))
+  dt$x <- as.numeric(levels(dt$x))[dt$x]
+  return(dt)
+}
+
+
+seqcov <- function(..., out="kmer-plot-seqcov.pdf"){
+    library(reshape2);
+    library(ggplot2);
+    library(grid);
+    library(gridExtra);
+
+    tsv.file <- c(...)[1];
+    tsv.id <- c(...)[2];
+    cmd <- paste("grep -w '^",tsv.id,"' ",tsv.file," | reshape", sep="");
+    print(cmd);
+    d1 <- read.table(pipe(cmd), header=F);
+    head(d1)
+
+    d1$pos <- 1:length(d1[,1])
+    colnames(d1) <- c("id", "rm", "rr", "am", "ar", "rc", "ac", "pos")
+
+    gg1 <- ggplot(d1, aes(x=pos)) +
+        geom_line(aes(y=rc, colour="raw counts")) +
+            geom_line(aes(y=ac, colour="adjusted counts")) +
+                geom_abline(intercept=41, slope=0) +
+                    scale_y_continuous(limits=c(0, 600))
+
+
+                                        # extract legend
+    gg1.legend <- get_legend(gg1)
+    gg1 <- gg1+theme(legend.position="none",
+                     plot.margin=unit(c(.5,.5,.5,0), "cm"))
+
+    h1 <- cbind(set="rc", hist_count(d1$rc))
+    h1 <- rbind(h1, cbind(set="ac", hist_count(d1$ac)))
+
+    gh1 <- ggplot(h1, aes(x=x, y=Freq, colour=set)) +
+        geom_line() +
+            coord_flip() +
+                labs(x=NULL) +
+                    theme(axis.text.y=element_blank(),
+                          axis.ticks.y=element_blank(),
+                          axis.title.y=element_blank(),
+                          plot.margin=unit(c(.5,.5,.5,0), "cm")) +
+                    scale_x_continuous(limits=c(0, 600))
+
+    pdf(out, width=10, height=6);
+    grid.arrange(gg1, gh1, gg1.legend, nrow = 2, widths = c(0.65, 0.35), heights=c(.8,.2))
+    dev.off();
+}
+
+get_legend<-function(myggplot){
+  tmp <- ggplot_gtable(ggplot_build(myggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
 ##-- shared --##
 
 kmerPeaks <- function(d, cov.dev=0.25, cov.min=15, k=3, freq.min=15, smooth="histGeom", breaks=100, trim.tail=TRUE){
