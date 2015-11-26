@@ -47,6 +47,10 @@ Path to the jellyfish kmer hash file.
 Disable preloading of hash into memory, recommended for small queries or
 subsequent runs on same hash (already mapped to memory).
 
+=item -A|--no-adjust
+
+Omit computation of adjusted scores (output will only contain 4 columns)
+
 =item [--help]
 
 Show help
@@ -55,10 +59,16 @@ Show help
 
 =back
 
-Output: one line per read, 3 fields (id, representative count, median count, per-base counts) tab separated, counts space separated
+Output: one line per read, 6 fields:
+  1) id
+  2) adjusted representative count
+  3) adjusted median count
+  4) representative count
+  5) median count
+  6) per base count, space separated
 
-  read1   110   120   1034 1223 1212 1234 1002 878 676 424 ...
-  read2   52    56    68 54 48 44 56 ...
+  read1   110   120   240   280    1034 1223 1212 1234 1002 878 676 424 ...
+  read2   52    56    52    56     68 54 48 44 56 ...
 
 =head1 CODE
 
@@ -103,7 +113,7 @@ my $jf = Jellyfish->new();
 my $ks = $jf->get_kmer_size($opt{jf});
 # my $kh = Kmer->new(kmer_size => $ks);
 
-if ($opt{adjust}) {
+if (! $opt{no_adjust}) {
     $L->info("computing adjustment hash");
     qx(jellyfish count -C -t $opt{threads} -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
     $opt{jfa} = "$tmp/adjust.jf";
@@ -196,7 +206,7 @@ sub thread_worker{
         $L->debug("# t$tid j$j\n");
         # process $c
         my @covs;
-        if ($opt{adjust}) {
+        if (! $opt{no_adjust}) {
             open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
             open(JFA, "jellyfish query -s $tfa $opt{jfa} | cut -d' ' -f2 |") or die $!;
             for (my $j=0; $j<@knum; $j++) {
@@ -225,10 +235,10 @@ sub thread_worker{
                 chop($cts);
                 chop($cas);
                 push @covs, $fbin->[$j]->id()."\t".
-                    hist_med(\%ctmed)."\t".
-                    hist_repr_anscombe(\%ctmed)."\t".
-                    hist_med(\%camed)."\t".
                     hist_repr_anscombe(\%camed)."\t".
+                    hist_med(\%camed)."\t".
+                    hist_repr_anscombe(\%ctmed)."\t".
+                    hist_med(\%ctmed)."\t".
                     $cts."\t".
                     $cas;
             }
@@ -246,7 +256,10 @@ sub thread_worker{
                     $cs.=$c." ";
                 }
                 chop($cs);
-                push @covs, $fbin->[$j]->id()."\t".hist_med(\%cmed)."\t".hist_repr_anscombe(\%cmed)."\t".$cs;
+                push @covs, $fbin->[$j]->id()."\t".
+                    hist_repr_anscombe(\%cmed).
+                    hist_med(\%cmed)."\t".
+                    "\t".$cs;
             }
             close JF;
         }
@@ -319,7 +332,7 @@ sub init{
                      in|reads=s
                      tmp=s
                      keep!
-                     adjust!
+                     no_adjust|no-adjust|A!
                      no_load|no-load|L!
                      threads|t=i
                      version|V!
