@@ -20,7 +20,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.5.0";
+our $VERSION = "0.5.1";
 
 =head1 NAME
 
@@ -61,6 +61,11 @@ specify precomputed adjustment hash.
 Omit exact peak refinement for coverage greater than this value. Exact
 refinement is slow for large values and the heuristic already guarantees a count
 within +- standard deviation of the refined value. This is usually precise enough.
+
+=item -l|min-length [1000]
+
+Omit sequences shorter than this from analysis/output. They will be included in
+adjustment hash computation, though.
 
 =item [--help]
 
@@ -156,8 +161,10 @@ while(1){
     my $flen = 0;
     my $eof = 1;
     while (my $fs = $fp->next_seq){
+        my $fl = length($fs->seq);
+        next unless $fl > $opt{min_length};
         push @fbin, $fs;
-        $flen += length($fs->seq);
+        $flen += $fl;
         if ($flen > $opt{chunk_size}){
             $eof=0;
             last;
@@ -342,6 +349,7 @@ sub init{
         tmp => (-d '/dev/shm' ? '/dev/shm' : '/tmp'),
         chunk_size => 5_000_000,
         max_refine_exact => 10_000,
+        min_length => 1000,
     );
     my $L = $opt{logger} = Log::Log4perl->get_logger();
 
@@ -352,6 +360,7 @@ sub init{
                      tmp=s
                      keep!
                      jfa|a=s
+                     min_length|min-length|l=i
                      no_adjust|no-adjust|A!
                      no_load|no-load|L!
                      max_refine_exact|max-refine-exact=i
