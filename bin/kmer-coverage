@@ -3,7 +3,7 @@ use warnings;
 use strict;
 
 use Pod::Usage;
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 use Log::Log4perl qw(:no_extra_logdie_message);
 use Log::Log4perl::Level;
 use File::Temp 'tempdir';
@@ -50,6 +50,11 @@ subsequent runs on same hash (already mapped to memory).
 =item -A|--no-adjust
 
 Omit computation of adjusted scores (output will only contain 4 columns)
+
+=item -a|--jfa
+
+By default, adjustment hash is computed on the fly from input. Use this to
+specify precomputed adjustment hash.
 
 =item [--help]
 
@@ -114,9 +119,16 @@ my $ks = $jf->get_kmer_size($opt{jf});
 # my $kh = Kmer->new(kmer_size => $ks);
 
 if (! $opt{no_adjust}) {
-    $L->info("computing adjustment hash");
-    qx(jellyfish count -C -t $opt{threads} -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
-    $opt{jfa} = "$tmp/adjust.jf";
+    if ($opt{jfa}) {
+        $L->logdie("Cannot find adjustment hash: $opt{jfa}") unless -f $opt{jfa};
+        my $ksa = $jf->get_kmer_size($opt{jfa});
+        $L->logdie("Cannot use adjustment hash with kmer size ($ksa) different from data hash ($ks)") unless $ks == $ksa;
+        $L->info("using precomputed hash $opt{jfa}");
+    }else {
+        $L->info("computing adjustment hash");
+        qx(jellyfish count -C -t $opt{threads} -s 10M -m $ks -o $tmp/adjust.jf $opt{in});
+        $opt{jfa} = "$tmp/adjust.jf";
+    }
 }
 
 
@@ -332,6 +344,7 @@ sub init{
                      in|reads=s
                      tmp=s
                      keep!
+                     jfa|a=s
                      no_adjust|no-adjust|A!
                      no_load|no-load|L!
                      threads|t=i
