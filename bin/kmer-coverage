@@ -20,7 +20,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.4.8";
+our $VERSION = "0.5.0";
 
 =head1 NAME
 
@@ -55,6 +55,12 @@ Omit computation of adjusted scores (output will only contain 4 columns)
 
 By default, adjustment hash is computed on the fly from input. Use this to
 specify precomputed adjustment hash.
+
+=item max-refine-exact [10000]
+
+Omit exact peak refinement for coverage greater than this value. Exact
+refinement is slow for large values and the heuristic already guarantees a count
+within +- standard deviation of the refined value. This is usually precise enough.
 
 =item [--help]
 
@@ -335,6 +341,7 @@ sub init{
         threads => 1,
         tmp => (-d '/dev/shm' ? '/dev/shm' : '/tmp'),
         chunk_size => 5_000_000,
+        max_refine_exact => 10_000,
     );
     my $L = $opt{logger} = Log::Log4perl->get_logger();
 
@@ -347,6 +354,7 @@ sub init{
                      jfa|a=s
                      no_adjust|no-adjust|A!
                      no_load|no-load|L!
+                     max_refine_exact|max-refine-exact=i
                      threads|t=i
                      version|V!
                      debug|D!
@@ -455,30 +463,40 @@ sub hist_repr_anscombe{
 
     # true max should be in +-1 anscombe space bin
     my $kmax_approx = int(anscombe_inv($kmax_ansc));
+    # running exact peak is slow for high cov and usually not necessary
+
+    return $kmax_approx if $kmax_approx > $opt{max_refine_exact};
+
     my $kmax_approx_min = int(anscombe_inv($kmax_ansc-1)+.5);
     my $kmax_approx_max = int(anscombe_inv($kmax_ansc+1)+.5);
 
-    my $kx = -1;
-    my $vx = -1;
+    my $sd = int(sqrt($kmax_approx)); # assume approx constant sd for range of kmax
+    my $sd_min = $kmax_approx_min-$sd;
+    $sd = 0 if $sd_min < 0;
+    my $sd_max = $kmax_approx_max+$sd;
+    $sd = $max if $sd_max > $max;
 
-    for (my $i=$kmax_approx_min; $i<=$kmax_approx_max; $i++) {
-        my $sd = int(sqrt($i));
-        my $sd_min = $i-$sd;
-        $sd = 0 if $sd_min < 0;
-        my $sd_max = $i+$sd;
-        $sd = $max if $sd_max > $max;
 
-        my $z = 0;
-        for (my $sdi = $sd_min; $sdi <= $sd_max; $sdi++) {
-            next unless exists $h->{$sdi};
-            $z+= $h->{$sdi};
-        }
+    # init z for first window
+    my $z = 0;
+    for (my $i = $sd_min; $i < $sd_min+($sd*2); $i++) {
+        next unless exists $h->{$i};
+        $z += $h->{$i};
+    }
 
+    my $vx = $z;
+    my $kx = $sd_min+$sd;
+
+    # slide and cache max
+    for (my $i = $sd_min+($sd*2); $i <= $sd_max; $i++) {
+        $z-= $h->{($i-($sd*2))} if exists $h->{$i-($sd*2)};
+        $z+= $h->{$i} if exists $h->{$i};
         if ($z > $vx){ # update max
-            $kx = $i;
+            $kx = $i-$sd;
             $vx = $z;
         }
     }
+    
     return $kx;
 }
 
