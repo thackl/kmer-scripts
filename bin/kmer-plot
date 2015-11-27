@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version 0.2.0
+# Version 0.2.1
 # Author: Thomas Hackl - thackl@lim4.de
 
 usage(){
@@ -9,9 +9,10 @@ Usage:
 
 Plot kmer distributions either from jellyfish histos oder hashes.
 MODEs:
-  density    coverage-frequency distribution of kmers (with peak calling)
+  cov        coverage-frequency distribution of kmers (with peak calling)
   gcmx       coverage-frequency-gc as heatmap; reads KAT gcp tables;
   gccov      length-gc-coverage of contigs in blobology like plot
+  seqcov     coverage along a sinle sequence
 
 EOF
 exit 0;
@@ -87,7 +88,7 @@ check_bin jellyfish;
 BIN="$(dirname "$(readlink -f "$0")")"
 
 case "$MODE" in
-    density)
+    cov)
         Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); kmerPlot(params, out="'$OUT'", useggplot='$USEGGPLOT');') $@;;
     gcmx)
         Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gcmx(params, out="'$OUT'");') $@;;
