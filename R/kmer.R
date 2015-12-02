@@ -362,55 +362,93 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000){
     library(reshape2);
     library(ggplot2);
     library(scales);
+    library(grid);
     library(gridExtra);
 
+    write("reading table", stderr());
     df.file <- c(...);
     df <- read.table(df.file, header=F);
     colnames(df) <- c("contig","length","GC","coverage");
-    df <- subset(df, GC > 0 & GC < 1); # ignore poly AAAA,GGGG, ..
+    df <- subset(df, GC > 0 & GC < 1 & length > length.min); # ignore poly AAAA,GGGG, ..
 
-    cls <- rev(c("#6a0000", "#d40000","#fb8b00", "#fddf01", "#3fcc00", "#06deea", "#020061"));
+    gg_color_hue <- function(n, l=65, c=100) {
+        hues = seq(15, 375, length=n+1)
+        hcl(h=hues, l=l, c=c)[1:n]
+    }
+
+    cls <- rev(gg_color_hue(7));
     cls.na <- cls[1];
 
-    z.max <- max(df$length)*1.5;
-    z.min <- min(df$length);
-    y.max <- 500#quantile(df$coverage, c(.5))*3
-
-    ## all, incl repeats
-    gg1 <- ggplot(df) +
-        geom_point(aes(x=GC, y=coverage, colour=length, size=log10(length), alpha=.7)) +
-            geom_point(aes(x=GC, y=coverage, size=1), colour="grey30", alpha=.8) +
-                #scale_y_continuous(trans="log", limits=c(10, NA)) +
-                    scale_colour_gradientn(colours=cls,
-                                       limits=c(500,z.max),
-                                       trans="log",
-                                       na.value=cls.na,
-                                       breaks=c(1e+3,1e+4,1e+5,1e+6,1e+7,1e+8),
-                                       labels=c("1 kbp","10 kbp","100 kbp","1 Mbp","10 Mbp", "100 Mbp")
-                                       );
-
-
     ## no repeats, min length plot
-    x.min <- min(df$GC);
-    x.max <- max(df$GC);
-    #df <- subset(df, length >= length.min);
-    gg3 <- ggplot(df) +
-        geom_point(aes(x=GC, y=coverage, colour=length, size=log10(length), alpha=.7)) +
-        geom_point(aes(x=GC, y=coverage, size=1), colour="grey30", alpha=.8) +
-            #scale_y_continuous(trans="log", limits=c(0.1,y.max)) +
-            ylim(0,y.max) +
-                xlim(x.min, x.max) +
-                scale_colour_gradientn(colours=cls,
-                                       limits=c(500,z.max),
-                                       trans="log",
-                                       na.value=cls.na,
-                                       breaks=c(1e+3,1e+4,1e+5,1e+6,1e+7,1e+8),
-                                       labels=c("1 kbp","10 kbp","100 kbp","1 Mbp","10 Mbp", "100 Mbp")
-                                       );
+    x.min <- min(df$GC)
+    x.max <- max(df$GC)
+    z.max <- max(df$length)*1.5
+    z.min <- min(df$length)
+    y.max <- 500 # quantile(df$coverage, c(.5))*3
+    bin.num <- 100
 
+    #df$bin <- factor(df$bin, levels=sample(unique(df$bin)))
+
+    labs <- c(">10",">100",">1k", ">10k", ">100k", ">1M", ">10M", ">100M");
+    breaks <- 1:8;
+    range <- as.integer(log10(range(df$length)))
+    print(range)
+    range1 <- (range/4)^4
+    range2 <- (range - 0.999) *2
+    print(range1)
+    print(range2)
+
+    write("computing scatter plot", stderr());
+    ## all, incl repeats
+    gg <- ggplot(df) +
+        geom_point(aes(x=GC, y=coverage,
+            colour=factor(as.character(as.integer(log10(length))), levels=15:0),
+            size=factor(as.integer(log10(length))),
+            shape=factor(1))) +
+         scale_shape(solid=FALSE, guide=FALSE) +
+         scale_colour_discrete("Contigs", breaks=breaks, labels=labs) +
+         scale_size_discrete("Contigs", labels=labs, breaks=breaks, range=range1)
+
+    write("computing histogram plot", stderr());
+
+    get_length_bin <- function(x){10^(floor(log(x, base=10)))}
+    df$length_bin <- sapply(df$length, get_length_bin)
+    df$length_bin <- factor(df$length_bin, levels=sort(unique(df$length_bin), decreasing=T))
+
+
+    gh <- ggplot(df) +
+        ylab("sum of length") +
+        coord_flip() +
+        labs(x=NULL) +
+        theme(
+            legend.position="none",
+            axis.text.y=element_blank(),
+            axis.ticks.y=element_blank(),
+            axis.title.y=element_blank(),
+            plot.margin=unit(c(.5,.5,.5,0), "cm")) +
+        scale_y_continuous(labels = scientific_format(digits=0))
+
+
+    # legend
+    gg.legend <- get_legend(gg + theme(legend.justification=c(1,1), legend.position=c(0,1)))
+
+    # actual plots
+    gg1 <- gg + theme(
+        legend.position="none",
+        plot.margin=unit(c(.5,.5,.5,0), "cm"))
+    gg2 <- gg1 +
+        ylim(0,y.max) +
+        xlim(x.min, x.max)
+
+    gh1 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length_bin)), binwidth=max(df$coverage/bin.num))
+    gh2 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length_bin)), binwidth=y.max/100) + xlim(0,y.max)
+
+    write("plotting", stderr());
     pdf(out, width=10, height=6);
-    print(gg1)
-    print(gg3)
+#    grid.arrange(gg1, gh1, nrow = 1, widths = c(0.65, .35))
+#    grid.arrange(gg2, gh2, nrow = 1, widths = c(0.65, .35))
+    grid.arrange(gg1, gh1, gg.legend, nrow = 1, widths = c(0.65, .35, .0))
+    grid.arrange(gg2, gh2, gg.legend, nrow = 1, widths = c(0.65, .35, .0))
     dev.off();
 
 }
