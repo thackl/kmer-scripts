@@ -20,7 +20,7 @@ use Thread::Queue;
 
 use Data::Dumper;
 
-our $VERSION = "0.5.3";
+our $VERSION = "0.5.4";
 
 =head1 NAME
 
@@ -127,7 +127,7 @@ my $tmp = tempdir(
 
 my $jf = Jellyfish->new();
 my $ks = $jf->get_kmer_size($opt{jf});
-# my $kh = Kmer->new(kmer_size => $ks);
+my $kh = Kmer->new(kmer_size => $ks);
 
 if (! $opt{no_adjust}) {
     if ($opt{jfa}) {
@@ -222,9 +222,12 @@ sub thread_worker{
         my @knum;
         open(TMP, '>', $tfa) or die $!;
         foreach my $fs (@$fbin) {
-            $fs->{seq} =~ tr/ATGC/G/c; # substitute non ATGC with G
+            my $bad_mers = 0;
+            foreach ( $kh->kmerize($fs->{seq}) ){
+                $bad_mers++ if tr/ATGC//c;
+            };
             print TMP $fs->string();
-            push @knum, length($fs->seq) - $ks + 1;
+            push @knum, length($fs->seq) - $ks + 1 - $bad_mers;
         }
         close TMP;
 
@@ -433,7 +436,7 @@ sub hist_med{
             last;
         }
     }
-    return $med;
+    return $med || 0;
 }
 
 
