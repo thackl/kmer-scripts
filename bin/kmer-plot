@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version 0.2.1
+# Version 0.3.0
 # Author: Thomas Hackl - thackl@lim4.de
 
 usage(){
@@ -29,7 +29,6 @@ MODE=$1;
 shift;
 [[ $MODE == "-"* ]] && echo "mode required" && usage;
 
-
 # Execute getopt
 ARGS=`getopt --name "$SCRIPT" \
     --options "o:ghV" \
@@ -48,20 +47,6 @@ HELP=0;
 # Now go through all the options
 while true; do
     case "$1" in
-        -o)
-            [ ! -n "$2" ] && (echo "$1: value required" 1>&2 && exit 1);
-            OUT=$2;
-            shift 2;;
-        # -s)
-        #     [ ! -n "$2" ] && (echo "$1: value required" 1>&2 && exit 1);
-        #     SHIFT=$2;
-        #     shift 2;;
-        -g)
-            USEGGPLOT=TRUE;
-            shift;;
-        # -b)
-        #     BED=1;
-        #     shift;;
         -h)
             HELP=1;
             shift;;
@@ -77,6 +62,27 @@ while true; do
 done
 
 
+# quote some strings etc
+#http://stackoverflow.com/questions/806906/how-do-i-test-if-a-variable-is-a-number-in-bash <- bad bash regex
+#http://stackoverflow.com/questions/13790763/bash-regex-to-check-floating-point-numbers-from-user-input
+OPTS=""
+for OPT in "$@"; do
+    VAL=${OPT#*=};
+    if [ ${#OPT} -gt ${#VAL} ]; then
+        KEY=${OPT%%=*};
+        if ! ([[ $VAL =~ ^[-+]?[0-9]+\.?[0-9]*$ ]] || [[ $VAL =~ ^(TRUE|FALSE|NA|NULL)$ ]] ); then
+            VAL='"'$VAL'"';
+        fi
+        OPTS="$OPTS, $KEY=$VAL";
+    else
+        OPTS="$OPTS, "'"'"$OPT"'"';
+    fi;
+done;
+
+OPTS=${OPTS:2};
+echo "$OPTS";
+#echo "$@"; exit;
+
 ## prep
 if [[ $# -eq 0 || $HELP -gt 1 ]]; then
     echo "help missing" && exit 0;
@@ -89,13 +95,18 @@ BIN="$(dirname "$(readlink -f "$0")")"
 
 case "$MODE" in
     cov)
-        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); kmerPlot(params, out="'$OUT'", useggplot='$USEGGPLOT');') $@;;
+        Rscript <(cat $BIN/../R/kmer.R; echo 'kmerPlot('$OPTS');') ;;
+        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); kmerPlot(params,'"$OPT"');') $@;;
     gcmx)
-        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gcmx(params, out="'$OUT'");') $@;;
+        Rscript <(cat $BIN/../R/kmer.R; echo 'gcmx('$OPTS');') ;;
+        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gcmx(params,'"$OPT"');') $@;;
     gccov)
-        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gccov(params, out="'$OUT'");') $@;;
+        #echo 'gccov('$OPTS');'
+        Rscript <(cat $BIN/../R/kmer.R; echo 'gccov('$OPTS');') ;;
+        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gccov(params,'"$OPT"');') $@;;
     seqcov)
-        Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); seqcov(params, out="'$OUT'");') $@;;
+        Rscript <(cat $BIN/../R/kmer.R; echo 'seqcov('$OPTS');') ;;
+        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); seqcov(params,'"$OPT"');') $@;;
     *)
         echo "unknown mode: $MODE" 1>&2 && usage;;
 esac
