@@ -358,7 +358,7 @@ gcmx <- function(..., coverage=NULL, out="kmerPlot.pdf"){
 
 ##-- gccov --#
 
-gccov <- function(..., out="kmerPlot.pdf", length.min=1000){
+gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500){
     library(reshape2);
     library(ggplot2);
     library(scales);
@@ -367,10 +367,16 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000){
 
     write("reading table", stderr());
     df.file <- c(...);
-    df <- read.table(df.file, header=F);
-    colnames(df) <- c("contig","length","GC","coverage");
-    df <- subset(df, GC > 0 & GC < 1 & length > length.min); # ignore poly AAAA,GGGG, ..
+    df <- read.table(df.file, header=F, fill=T);
 
+    if ( length(df[1,]) == 5 ){
+        colnames(df) <- c("contig","length","GC","coverage","group");
+    }else{
+        colnames(df) <- c("contig","length","GC","coverage");
+    }
+
+    df <- subset(df, GC > 0 & GC < 1 & length > length.min); # ignore poly AAAA,GGGG, ..
+    df <- df[order(df$length),];
     gg_color_hue <- function(n, l=65, c=100) {
         hues = seq(15, 375, length=n+1)
         hcl(h=hues, l=l, c=c)[1:n]
@@ -384,30 +390,67 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000){
     x.max <- max(df$GC)
     z.max <- max(df$length)*1.5
     z.min <- min(df$length)
-    y.max <- 500 # quantile(df$coverage, c(.5))*3
+    y.max <- coverage.max # quantile(df$coverage, c(.5))*3
     bin.num <- 100
 
     #df$bin <- factor(df$bin, levels=sample(unique(df$bin)))
 
     labs <- c(">10",">100",">1k", ">10k", ">100k", ">1M", ">10M", ">100M");
     breaks <- 1:8;
+    sizes  <- c(0.01,0.05,.1,.5,3,6,10,15);
     range <- as.integer(log10(range(df$length)))
-    print(range)
-    range1 <- (range/4)^4
-    range2 <- (range - 0.999) *2
-    print(range1)
-    print(range2)
-
+    print(range);
+    sizes <- sizes[range[1]:range[2]];
+    # range1 <- (range/4)^4
+    # range2 <- (range - 0.999) *2
+    # range <- range1
+    # range <- c(0.01,8);
+    #    print(range1)
+                                        #    print(range2)
     write("computing scatter plot", stderr());
     ## all, incl repeats
-    gg <- ggplot(df) +
-        geom_point(aes(x=GC, y=coverage,
+    aes.points <- c();
+    scale.shape <- c();
+    scale.colour <- c();
+    scale.fill <- c();
+
+    if(length(colnames(df)) > 4){ # group column
+        tax.df <- (as.data.frame(table(df$group)))
+        tax.df <- tax.df[order(tax.df$Freq, decreasing=T),]
+        print(tax.df);
+        tax.levels <- tax.df$Var1;
+        tax.labels <- as.vector(apply(tax.df, 1, function(x){paste(x[1]," (",as.numeric(x[2]),")", sep="")}))
+        print(tax.labels);
+        df$group <- factor(df$group, levels=tax.levels)
+
+        aes.points <- aes(x=GC, y=coverage,
+            #colour=factor(as.character(as.integer(log10(length))), levels=15:0),
+            colour=factor(group),
+            size=factor(as.integer(log10(length))),
+            shape=factor(group)
+            #alpha=factor(as.integer(log10(length)))
+        )
+        scale.shape <- scale_shape("Taxonomy", solid=FALSE, labels=tax.labels)
+        scale.colour <- scale_colour_discrete("Taxonomy", labels=tax.labels)
+        scale.fill <- scale_fill_grey();
+
+    }else{
+        aes.points <- aes(x=GC, y=coverage,
             colour=factor(as.character(as.integer(log10(length))), levels=15:0),
             size=factor(as.integer(log10(length))),
-            shape=factor(1))) +
-         scale_shape(solid=FALSE, guide=FALSE) +
-         scale_colour_discrete("Contigs", breaks=breaks, labels=labs) +
-         scale_size_discrete("Contigs", labels=labs, breaks=breaks, range=range1)
+            shape=factor(1))
+        scale.shape <- scale_shape(guide=FALSE, solid=FALSE)
+        scale.colour <- scale_colour_discrete("Contigs", breaks=breaks, labels=labs)
+        scale.fill <- scale_fill_discrete();
+    }
+
+
+    gg <- ggplot(df) +
+        geom_point(aes.points) +
+        scale.shape +
+        scale.colour +
+        scale_size_manual("Contigs", labels=labs, breaks=breaks, values=sizes) #+
+#        scale_alpha_discrete(range=c(.4,.9), guide=FALSE)
 
     write("computing histogram plot", stderr());
 
@@ -440,8 +483,8 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000){
         ylim(0,y.max) +
         xlim(x.min, x.max)
 
-    gh1 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length_bin)), binwidth=max(df$coverage/bin.num))
-    gh2 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length_bin)), binwidth=y.max/100) + xlim(0,y.max)
+    gh1 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length_bin)), binwidth=max(df$coverage/bin.num)) + scale.fill
+    gh2 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length_bin)), binwidth=y.max/100) + xlim(0,y.max) + scale.fill
 
     write("plotting", stderr());
     pdf(out, width=10, height=6);
