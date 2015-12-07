@@ -1,6 +1,7 @@
 ### kmer.R ##
 ## A collection of functions for kmer statistics analysis and plotting
-
+## Author: Thomas Hackl
+## Version: 2.0.0
 
 ##-- make_plots.R ------------------------------------------------------------------##
 
@@ -357,138 +358,196 @@ gcmx <- function(..., coverage=NULL, out="kmerPlot.pdf"){
 }
 
 ##-- gccov --#
+gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
+                  tax.occ.min=1, bin.num=100, tax.ignore=FALSE, theme="gg",
+                  palette="gg", length.min.scatter=0, jitter=FALSE,
+                  sample.scatter=0, width=10, height=6
+                  ){
 
-gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500, tax.freq.min=1, theme="gg", bin.num=100){
     library(reshape2);
     library(ggplot2);
     library(scales);
     library(grid);
     library(gridExtra);
     library(RColorBrewer);
+    library(colorspace);
 
-    if (tax.freq.min < 1) tax.freq.min <- 1;
+    if (tax.occ.min < 1) tax.occ.min <- 1;
 
     ## read data
     write("reading table", stderr());
     df.file <- c(...);
-    df <- read.table(df.file, header=F, fill=T);
+    df.file <- OpenRead(df.file) # prevent R peek bug on <() constructs
+
+    df <- read.table(df.file, header=F, fill=T, sep="\t");
 
     with.tax <- FALSE
-    if ( length(df[1,]) == 5 ){
+    if ( !tax.ignore &&
+            length(df[1,]) == 5 ){
         colnames(df) <- c("contig","length","GC","coverage","tax");
         with.tax <- TRUE
     }else{
         colnames(df) <- c("contig","length","GC","coverage");
     }
 
-
     ## prepare data
     write("filtering data", stderr());
+    df <- subset(df, GC > 0 & GC < 1 & length >= length.min); # ignore poly AAAA,GGGG, ..
     df <- df[order(df$length),];
+    get_length.bin <- function(x){ as.integer(log10(x)) }
 
-    get_length.bin <- function(x){10^(floor(log(x, base=10)))}
     df$length.bin <- sapply(df$length, get_length.bin)
     df$length.bin <- factor(df$length.bin, levels=sort(unique(df$length.bin), decreasing=T)) # order in which hist is stacked
-
-    df.gg <- subset(df, GC > 0 & GC < 1 & length >= length.min); # ignore poly AAAA,GGGG, ..
-    df.gh <- subset(df, GC > 0 & GC < 1 & length < length.min); # ignore poly AAAA,GGGG, ..
-    df <- df.gg;
 
     ## get some specs
     x.min <- min(df$GC)
     x.max <- max(df$GC)
     y.max <- ifelse(coverage.max, coverage.max, max(df$coverage)) # quantile(df$coverage, c(.5))*3
 
-
-    ## compute some aestetics
-    labs <- c(">10",">100",">1k", ">10k", ">100k", ">1M", ">10M", ">100M");
-    breaks <- 1:8;
-    sizes  <- c(0.05,0.1,.4,.9,3,6,10,15);
-    range <- as.integer(log10(range(df$length)))
-    # range.gg <- range
-    # if(range.gg[1] < as.integer(log10(length.min))) range.gg[1] <- as.integer(log10(length.min))
-    sizes <- sizes[range[1]:range[2]];
-
-
-    write("setting up scatter plot", stderr());
-    ## all, incl repeats
+    write("setting up plots", stderr());
     aes.points <- c();
-    scale.shape <- c();
     scale.colour <- c();
+    scale.size <- c();
+    scale.shape <- c();
     scale.fill <- c();
 
-    if(with.tax){ # tax column
+    ## aestetics
+    labs <- c(">10",">100",">1k", ">10k", ">100k", ">1M", ">10M", ">100M");
+    breaks <- 1:8;
+    cls <- c()
+    if(palette == "gg"){
+        cls <- gg_color_hue(length(breaks)-1);
+        cls <- c("#525252", cls[c(5,3,1,6,7,2,4)]); # mixed gg + grey base
+    }else{
+        cls <- brewer.pal(length(breaks), palette)
+    }
+    sizes  <- c(0.2,0.3,.5,.9,3,6,10,15);
+    shapes <- rep(1, 8)   # only one shape
 
+    names(labs) <- breaks
+    names(cls) <- breaks
+    names(shapes) <- breaks
+    names(sizes) <- breaks
+
+
+    range <- as.integer(log10(range(df$length)))
+    breaks <- breaks[range[1]:range[2]];
+    labs <- labs[range[1]:range[2]];
+
+    aes.points <- aes(x=GC, y=coverage,
+                      colour=length.bin,
+                      size=length.bin,
+                      shape=length.bin)
+
+    scale.shape <- scale_shape_manual("Contigs (bp)", labels=labs, values=shapes, limits=breaks)
+    scale.size <- scale_size_manual("Contigs (bp)", labels=labs, breaks=breaks, values=sizes, limits=breaks)
+    scale.colour <- scale_colour_manual("Contigs (bp)", labels=labs, breaks=breaks, values=cls, limits=breaks)
+
+                                        # gh
+    cls.fill <- rev(cls)
+    cls.guide <- c()
+    scale.fill <- scale_fill_manual(values=cls.fill);
+    tax.length.level <- c();
+
+    if(with.tax){ # tax column
+        ## sort tax
         tax.df <- (as.data.frame(table(df$tax)))
         tax.df <- tax.df[order(tax.df$Freq, decreasing=T),]
-        tax.df <- tax.df[tax.df$Freq >= tax.freq.min,]
+        tax.df <- tax.df[tax.df$Freq >= tax.occ.min,]
         tax.levels <- as.vector(tax.df$Var1);
         tax.n <- length(tax.levels)
         tax.labels <- as.vector(apply(tax.df, 1, function(x){paste(x[1]," (",as.numeric(x[2]),")", sep="")}))
         df$tax <- factor(df$tax, levels=tax.levels)
         df <- df[complete.cases(df),] # remove low freq taxs with NA tax factor
 
-        cls <- c();
-        cls.fill <- c();
-        hues <- seq(from=15, to=375, length=tax.n+1)[1:tax.n]
-        for (i in 1:tax.n) {
-            tax <- tax.levels[i]
-            n <- length(unique(as.integer(log10(df$length[df$tax==tax]))))
-            steps <- seq(from=90,to=60,length=n)
-            cls <- c(cls, sapply(steps, function(x){ hcl(h=hues[i], l=x, c=100) }))
-            cls.fill <- c(cls.fill, rev(sapply(steps, function(x){ hcl(h=hues[i], l=x, c=100) })))
+        ## compute colours
+        if(palette == "gg"){
+            cls <- rev(gg_color_hue(tax.n));
+        }else{
+            cls <- brewer.pal(ifelse(tax.n>3, tax.n, 3), palette)[1:tax.n]
         }
 
-        tax.breaks <- sapply(tax.levels, function(x){ paste(x, as.integer(log10(max(df$length[df$tax==x]))), sep=":") })
-        #print(tax.breaks)
+        tax.cls <- c()
+        tax.cls.fill <- c()
+
+        for (i in 1:tax.n){
+            cls.seq <- hex_col_seq(cls[i], n=8)
+            cls.seq <- cls.seq[range[1]:range[2]]
+
+                                        #x <- tax.levels[i]
+                                        #x.id <-unique(as.integer(log10(df$length[df$tax==x])))
+                                        #cls.seq <- cls.seq[x.id]
+
+            tax.cls <- c(tax.cls, rev(cls.seq))
+            tax.cls.fill <- c(tax.cls.fill, rev(cls.seq))
+        }
+
+        tax.length.level <- levels(factor(df$tax):df$length.bin)
+        names(tax.cls) <- tax.length.level
+
+                                        # guide colour
+        cls.guide <- hex_col_seq(cls[1], n=8)
+        cls.guide <- cls.guide[range[1]:range[2]]
+
+        tax.breaks <- factor(sapply(tax.levels, function(x){ paste(x, as.integer(log10(max(df$length[df$tax==x]))), sep=":") }), level=tax.length.level)
 
         aes.points <- aes(x=GC, y=coverage,
-            colour=factor(tax):factor(as.integer(log10(length))),
-            size=factor(as.integer(log10(length))),
-            shape=factor(1)
-        )
-        scale.shape <- scale_shape(guide=FALSE, solid=FALSE)
-        # scale.shape <- scale_shape("Taxonomy", solid=FALSE, labels=tax.labels)
-        scale.colour <- scale_colour_manual("Taxonomy", breaks=tax.breaks, labels=tax.labels, values=cls)
-        scale.fill <- scale_fill_manual(values=cls.fill);
+                          colour=factor(tax):factor(length.bin),
+                          size=length.bin,
+                          shape=length.bin
+                          )
+                                        #scale.shape <- scale_shape_manual("Taxonomy", labels=tax.labels, values=shapes, limits=breaks)
+                                        #scale.shape <- scale_shape("Taxonomy", solid=FALSE, labels=tax.labels)
+        scale.colour <- scale_colour_manual("Taxonomy", breaks=tax.breaks, labels=tax.labels, values=tax.cls)
+        scale.fill <- scale_fill_manual(values=tax.cls, breaks=tax.breaks);
 
-    }else{
-        cls <- rev(gg_color_hue(length(breaks)));
-        cls <- brewer.pal(length(breaks),"Set2")
-        cls <- cls[range[1]:range[2]]
-        cls.fill <- rev(cls)
-
-        aes.points <- aes(x=GC, y=coverage,
-            colour=factor(as.character(as.integer(log10(length))), levels=0:8),
-            size=factor(as.integer(log10(length))),
-            shape=factor(1))
-        scale.shape <- scale_shape(guide=FALSE, solid=FALSE)
-        scale.colour <- scale_colour_manual("Contigs", breaks=breaks, labels=labs, values=cls)
-        scale.fill <- scale_fill_manual(values=cls.fill);
     }
 
 
-    ## plots
-    write("setting up histogram plot", stderr());
-
+    ##- gg ----------------------------------------------------------------------##
     ## themes
     gg.theme <- theme(
         text=element_text(size=10),
         legend.position="none",
         plot.margin=unit(c(.5,.5,.5,0), "cm"))
 
+    ##- themes ----------------------------------------------------------------------##
+    if (theme == "bw"){
+        gg.theme <- theme_bw() + gg.theme;
+    } else if (theme == "classic"){
+        gg.theme <- theme_classic() + gg.theme;
+    }
 
     ## plots
-    gg <- ggplot(subset(df, length >= length.min)) +
-        geom_point(aes.points) +
-        scale.shape +
-        scale.colour +
-        scale_size_manual("Contigs", labels=labs, breaks=breaks, values=sizes) +
-        gg.theme +
-        xlim(x.min, x.max)
+    df.gg <- subset(df, length > length.min.scatter)
+    if(sample.scatter){
+        df.gg <- df.gg[sample(nrow(df.gg), nrow(df.gg)*sample.scatter), ]
+        df.gg <- df.gg[order(df.gg$length),];
+    }
+
+    gg <- ggplot(df.gg) +
+        geom_point(aes.points, position=ifelse(jitter, "jitter", "identity")) +
+            scale.shape +
+                scale.colour +
+                    scale.size +
+                        gg.theme +
+                            xlim(x.min, x.max)
 
 
-    ## legend
+    guides.legend <- guides(
+        colour = guide_legend(order=1, reverse=TRUE),
+        size = guide_legend(order=1, reverse=TRUE),
+        shape = guide_legend(order=1, reverse=TRUE)
+    )
+
+    if(with.tax){
+        guides.legend <- guides(
+            colour = guide_legend(order=1, override.aes=list(colour=cls)),
+            size = guide_legend(order=2, reverse=TRUE),
+            shape = guide_legend(order=2, reverse=TRUE, override.aes=list(colour=rev(cls.guide)))
+        )
+    }
+
     gg.legend <- get_legend(
         gg + theme(
             legend.justification=c(1,1),
@@ -496,69 +555,11 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500, ta
             legend.box.just = "right",
             legend.text=element_text(size=8),
             text = element_text(size=10)
-        ) +
-        guides(
-            colour=guide_legend(order=1),
-            fill=guide_legend(order=2),
-            size=guide_legend(order=5)
-        )
+        ) + guides.legend
     )
 
 
     ##- gh ----------------------------------------------------------------------##
-    df <- subset(df, GC > 0 & GC < 1 & length < 100000); # ignore poly AAAA,GGGG, ..
-
-    if(with.tax){ # tax column
-
-        tax.df <- (as.data.frame(table(df$tax)))
-        tax.df <- tax.df[order(tax.df$Freq, decreasing=T),]
-        tax.df <- tax.df[tax.df$Freq >= tax.freq.min,]
-        tax.levels <- as.vector(tax.df$Var1);
-        tax.n <- length(tax.levels)
-        tax.labels <- as.vector(apply(tax.df, 1, function(x){paste(x[1]," (",as.numeric(x[2]),")", sep="")}))
-        df$tax <- factor(df$tax, levels=tax.levels)
-        df <- df[complete.cases(df),] # remove low freq taxs with NA tax factor
-
-        cls <- c();
-        cls.fill <- c();
-        hues <- seq(from=15, to=375, length=tax.n+1)[1:tax.n]
-        for (i in 1:tax.n) {
-            tax <- tax.levels[i]
-            n <- length(unique(as.integer(log10(df$length[df$tax==tax]))))
-            steps <- seq(from=90,to=60,length=n)
-            cls <- c(cls, sapply(steps, function(x){ hcl(h=hues[i], l=x, c=100) }))
-            cls.fill <- c(cls.fill, rev(sapply(steps, function(x){ hcl(h=hues[i], l=x, c=100) })))
-        }
-
-        tax.breaks <- sapply(tax.levels, function(x){ paste(x, as.integer(log10(max(df$length[df$tax==x]))), sep=":") })
-        #print(tax.breaks)
-
-        aes.points <- aes(x=GC, y=coverage,
-            colour=factor(tax):factor(as.integer(log10(length))),
-            size=factor(as.integer(log10(length))),
-            shape=factor(1)
-        )
-        scale.shape <- scale_shape(guide=FALSE, solid=FALSE)
-        # scale.shape <- scale_shape("Taxonomy", solid=FALSE, labels=tax.labels)
-        scale.colour <- scale_colour_manual("Taxonomy", breaks=tax.breaks, labels=tax.labels, values=cls)
-        scale.fill <- scale_fill_manual(values=cls.fill);
-
-    }else{
-        cls <- rev(gg_color_hue(length(breaks)));
-        cls <- brewer.pal(length(breaks),"Set2")
-        cls <- cls[range[1]:range[2]]
-        cls.fill <- rev(cls)
-
-        aes.points <- aes(x=GC, y=coverage,
-            colour=factor(as.character(as.integer(log10(length))), levels=0:8),
-            size=factor(as.integer(log10(length))),
-            shape=factor(1))
-        scale.shape <- scale_shape(guide=FALSE, solid=FALSE)
-        scale.colour <- scale_colour_manual("Contigs", breaks=breaks, labels=labs, values=cls)
-        scale.fill <- scale_fill_manual(values=cls.fill);
-    }
-
-
     gh.theme <- theme(
         text=element_text(size=10),
         legend.position="none",
@@ -567,30 +568,24 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500, ta
         axis.title.y=element_blank(),
         plot.margin=unit(c(.5,.5,.5,0), "cm"))
 
+    if (theme == "bw"){
+        gh.theme <- theme_bw() + gh.theme;
+    }else if (theme == "classic"){
+        gh.theme <- theme_classic() + gh.theme;
+    }
+
 
     gh <- ggplot(df) +
         ylab("sum of length") +
-        coord_flip() +
-        labs(x=NULL) +
-        gh.theme +
-        scale_y_continuous(labels = scientific_format(digits=0))
+            coord_flip() +
+                labs(x=NULL) +
+                    gh.theme +
+                        scale_y_continuous(labels = scientific_format(digits=0))
 
 
-
-    ## TODO
-    ## if (theme == "bw"){
-    ##     gg <- gg + theme_bw();
-    ##     gh <- gh + theme_bw() %+replace% gh.theme()
-    ## }
-    ## if (theme == "classic"){
-    ##     gg <- gg + theme_classic();
-    ##     gh <- gh + theme_classic() %+replace% gh.theme()
-    ## }
-
-
-    ## plotting
+    ##- plotting ----------------------------------------------------------------------##
     write("plotting", stderr());
-    pdf(out, width=10, height=6);
+    pdf(out, width=width, height=height);
 
     for (yy in y.max){
         gg <- gg + ylim(0,yy)
@@ -605,36 +600,8 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500, ta
     }
 
     dev.off();
-
-
-
-##     # actual plots
-##     gg1 <- gg + theme(
-##         text=element_text(size=10),
-##         legend.position="none",
-##         plot.margin=unit(c(.5,.5,.5,0), "cm"))
-##     gg2 <- gg1 +
-##         ylim(0,y.max) +
-##         xlim(x.min, x.max)
-
-
-##     if(length(colnames(df)) > 5){ # group column
-##         gh1 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(group):factor(length.bin)), binwidth=max(df$coverage/bin.num)) + scale.fill
-##         gh2 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(group):factor(length.bin)), binwidth=y.max/100) + xlim(0,y.max) + scale.fill
-##     }else{
-##         gh1 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length.bin)), binwidth=max(df$coverage/bin.num)) + scale.fill
-##         gh2 <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length.bin)), binwidth=y.max/100) + xlim(0,y.max) + scale.fill
-##     }
-
-##     write("plotting", stderr());
-##     pdf(out, width=10, height=6);
-## #    grid.arrange(gg1, gh1, nrow = 1, widths = c(0.65, .35))
-## #    grid.arrange(gg2, gh2, nrow = 1, widths = c(0.65, .35))
-##     grid.arrange(gg1, gh1, gg.legend, nrow = 1, widths = c(0.65, .35, .0))
-##     grid.arrange(gg2, gh2, gg.legend, nrow = 1, widths = c(0.65, .35, .0))
-##     dev.off();
-
 }
+
 
 hist_count <- function (x){
   dt <- as.data.frame(table(x))
@@ -1048,6 +1015,22 @@ hex_col_shade <- function(colour, n=5){
     do.call(rgb, as.list(colour.rgb*x))
   })
   return(colour.shades)
+}
+
+hex_col_seq <- function(colour, n=5, c.=c(60,85), l=c(90,50)){
+  c.hsv <- rgb2hsv(col2rgb(colour))
+  sequential_hcl(n, h=c.hsv[1]*360, c.=c., l=l)
+}
+
+OpenRead <- function(arg) {
+    ## http://stackoverflow.com/questions/15784373/process-substitution
+    if (arg %in% c("-", "/dev/stdin")) {
+        file("stdin", open = "r")
+    } else if (grepl("^(/dev/fd/|/proc/self/fd/)", arg)) {
+        fifo(arg, open = "r")
+    } else {
+        file(arg, open = "r")
+    }
 }
 
 ##-- main ---------------------------------------------------------------------##
