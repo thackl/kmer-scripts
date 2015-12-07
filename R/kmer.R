@@ -1,7 +1,7 @@
 ### kmer.R ##
 ## A collection of functions for kmer statistics analysis and plotting
 ## Author: Thomas Hackl
-## Version: 2.0.0
+## Version: 2.1.0
 
 ##-- make_plots.R ------------------------------------------------------------------##
 
@@ -361,7 +361,7 @@ gcmx <- function(..., coverage=NULL, out="kmerPlot.pdf"){
 gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
                   tax.occ.min=1, bin.num=100, tax.ignore=FALSE, theme="gg",
                   palette="gg", length.min.scatter=0, jitter=FALSE,
-                  sample.scatter=0, width=10, height=6
+                  sample.scatter=0, format="pdf", width=10, height=6
                   ){
 
     library(reshape2);
@@ -531,7 +531,8 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
                 scale.colour +
                     scale.size +
                         gg.theme +
-                            xlim(x.min, x.max)
+                            xlim(x.min, x.max) +
+                                ylim(0,y.max)
 
 
     guides.legend <- guides(
@@ -580,26 +581,30 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
             coord_flip() +
                 labs(x=NULL) +
                     gh.theme +
-                        scale_y_continuous(labels = scientific_format(digits=0))
+                        scale_y_continuous(labels = scientific_format(digits=0)) +
+                             xlim(0,y.max) + scale.fill
+
+    if(with.tax){ # tax column
+        gh <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(tax):factor(length.bin)), binwidth=y.max/bin.num)
+    }else{
+        gh <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length.bin)), binwidth=y.max/bin.num)
+    }
 
 
     ##- plotting ----------------------------------------------------------------------##
     write("plotting", stderr());
-    pdf(out, width=width, height=height);
 
-    for (yy in y.max){
-        gg <- gg + ylim(0,yy)
-
-        if(with.tax){ # tax column
-            gh <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(tax):factor(length.bin)), binwidth=y.max/bin.num) + xlim(0,y.max) + scale.fill
+    for(f in format){
+        if(f == "pdf"){
+            pdf(out, width=width, height=height);
+        }else if(f == "png"){
+            png(out, width=width*100, height=height*100);
         }else{
-            gh <- gh + geom_bar(aes(x=coverage, weight=length, fill=factor(length.bin)), binwidth=y.max/bin.num) + xlim(0,y.max) + scale.fill
+            stop(paste("unknown format:", f));
         }
-
         grid.arrange(gg, gh, gg.legend, nrow = 1, widths = c(0.65, .35, .0))
+        dev.off();
     }
-
-    dev.off();
 }
 
 
