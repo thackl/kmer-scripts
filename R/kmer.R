@@ -659,6 +659,170 @@ seqcov <- function(..., out="kmer-plot-seqcov.pdf"){
     dev.off();
 }
 
+
+asmcov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
+                   bin.num=100, anscombe=FALSE, theme="gg", palette="gg",
+                   width=10, height=6, kmer.histo=""
+                   ){
+
+    library(reshape2);
+    library(ggplot2);
+    library(scales);
+    library(grid);
+    library(gridExtra);
+    library(RColorBrewer);
+    library(colorspace);
+
+    ## read data
+    files <- c(...);
+    df <- data.frame(contig=character(0), length=numeric(0), GC=numeric(0), coverage=numeric(0), assembly=character(0));
+
+    for (df.file in files){
+        write(paste("reading table: ", df.file), stderr());
+
+        df.fh <- OpenRead(df.file) # prevent R peek bug on <() constructs
+        df.tmp <- read.table(df.fh, header=F, fill=T, sep="\t");
+        close(df.fh)
+
+        df.tmp[5] <- df.file
+        colnames(df.tmp) <- c("contig","length","GC","coverage", "assembly");
+        df <- rbind(df, df.tmp)
+    }
+
+    dk <- c();
+    if(length(kmer.histo)){
+        dk <- read.table(kmer.histo, header=F)
+        colnames(dk) <- c("coverage", "count")
+                                        #dk$frequency
+    }
+
+    ## prepare data
+    write("filtering data", stderr());
+    df <- subset(df, GC > 0 & GC < 1 & length >= length.min); # ignore poly AAAA,GGGG, ..
+
+    get_length.bin <- function(x){ as.integer(log10(x)) }
+    df$length.bin <- sapply(df$length, get_length.bin)
+    df$length.bin <- factor(df$length.bin, levels=sort(unique(df$length.bin), decreasing=T)) # order in which hist is stacked
+
+    write("setting up plots", stderr());
+
+    ## aestetics
+    y.max <- max(df$length)
+    x.max <- ifelse(coverage.max, coverage.max, max(df$coverage))
+    x.breaks <- c();
+
+    breaks <- 1:8
+    labs <- c(">10",">100",">1k", ">10k", ">100k", ">1M", ">10M", ">100M");
+    names(labs) <- breaks
+
+    cls <- c()
+    if(palette == "gg"){
+        cls <- gg_color_hue(length(breaks)-1);
+        cls <- c("#525252", cls[c(5,3,1,6,7,2,4)]); # mixed gg + grey base
+    }else{
+        cls <- brewer.pal(length(breaks), palette)
+    }
+    names(cls) <- breaks
+
+    range <- as.integer(log10(range(df$length)))
+    breaks <- breaks[range[1]:range[2]];
+    labs <- labs[range[1]:range[2]];
+
+    scale.fill <- scale_fill_manual("Contigs (bp)", labels=labs, breaks=breaks, values=cls, limits=breaks)
+
+    ##- themes ----------------------------------------------------------------------##
+    gh.guides <- guides(fill = guide_legend(reverse=FALSE))
+
+    gh.theme <- theme(text=element_text(size=10), panel.grid.minor = element_blank())
+
+    if (theme == "bw"){
+        gh.theme <- theme_bw() + gh.theme;
+    }else if (theme == "classic"){
+        gh.theme <- theme_classic() + gh.theme;
+    }
+
+    ##- plot ------------------------------------------------------------------------##
+    gh.aes <- c();
+    scale.x <- c();
+    bin.width <- c();
+    if(! anscombe){
+        bin.width <- x.max/bin.num
+        gh.aes <- aes(x=coverage, weight=length, fill=length.bin)
+                                        #gh.aes <- aes(x=coverage, fill=length.bin)
+        scale.x <- scale_x_continuous("coverage", limits=c(NA, x.max))
+    }else{
+        x.breaks <- anscombe_breaks(x.max);
+        bin.width <- 1;
+        gh.aes <- aes(x=anscombe(coverage), weight=length, fill=length.bin)
+                                        #gh.aes <- aes(x=anscombe(coverage), fill=length.bin)
+        scale.x <- scale_x_continuous(breaks=x.breaks, labels=anscombe_inv, "coverage", limits=c(NA, anscombe(x.max)))
+    }
+
+    gh <- ggplot(df) +
+        geom_bar(gh.aes, stat="bin", binwidth=bin.width) +
+            scale_y_continuous("sum of length [bp]", labels=scientific_format(digits=0)) +
+                gh.theme +
+                    gh.guides +
+                        scale.x +
+                            scale.fill +
+                                facet_wrap(~assembly, ncol=1)
+
+    if(length(kmer.histo)){
+        gh <- gh + geom_line(
+            data=dk[dk$coverage >10,], aes(x=anscombe(coverage), y=count*50, linetype="count * 50")) +
+                scale_linetype("k-mers")
+
+    }
+
+                                        #gg.c <- ggplot(df, aes(x=anscombe(x))) +
+                                        #  geom_bar(aes(weight=len, fill=bin), stat="bin", binwidth=1) +
+                                        #  scale_x_continuous(breaks=breaks.anscombe, labels=anscombe_inv)
+
+
+    ##- plotting ----------------------------------------------------------------------##
+    write("plotting", stderr());
+
+    if(grepl(".pdf$", out)){
+        pdf(out, width=width, height=height);
+    }else if(grepl(".png$", out)){
+        png(out, width=width*100, height=height*100);
+    }else{
+        stop("only .pdf and .png output supported");
+    }
+
+    print(gh)
+
+    dev.off();
+}
+
+anscombe <- function(x){2*sqrt(x + 3/8)}
+anscombe_int <- function(x){round(2*sqrt(x + 3/8), digits=0)}
+anscombe_inv <- function(x){(x/2)^2 - 3/8}
+
+anscombe_breaks <- function(max, list=FALSE){
+    ex <- as.integer(log10(max))+2
+    b.n <- as.vector(sapply(1:ex, function(x){c(.1,.2,.5) * 10^x} ))
+    b.n <- b.n[1:which(b.n > max)[1]]
+    b.a <- sapply(b.n, anscombe)
+    d.a <- max(b.a)/15
+
+    r <- list();
+    r$b.a <- b.a[1]
+    r$b.n <- b.n[1]
+    for(i in 2:length(b.a)){
+        if(r$b.a[length(r$b.a)] + d.a < b.a[i]){
+            r$b.a <- c(r$b.a, b.a[i])
+            r$b.n <- c(r$b.n, b.n[i])
+        }
+    }
+
+    if(list){
+        return(r)
+    }else{
+        return(r$b.a)
+    }
+}
+
 get_legend<-function(myggplot){
   tmp <- ggplot_gtable(ggplot_build(myggplot))
   leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
