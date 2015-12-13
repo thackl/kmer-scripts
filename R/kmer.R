@@ -377,9 +377,9 @@ gccov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
     ## read data
     write("reading table", stderr());
     df.file <- c(...);
-    df.file <- OpenRead(df.file) # prevent R peek bug on <() constructs
-
-    df <- read.table(df.file, header=F, fill=T, sep="\t");
+    df.fh <- OpenRead(df.file) # prevent R peek bug on <() constructs
+    df <- read.table(df.fh, header=F, fill=T, sep="\t");
+    close(df.fh)
 
     with.tax <- FALSE
     if ( !tax.ignore &&
