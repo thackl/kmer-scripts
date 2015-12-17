@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Version 0.3.0
+# Version 0.3.1
 # Author: Thomas Hackl - thackl@lim4.de
 
 usage(){
@@ -9,12 +9,13 @@ Usage:
 
 Plot kmer distributions either from jellyfish histos oder hashes.
 MODEs:
-  cov        coverage-frequency distribution of kmers (with peak calling)
-  gcmx       coverage-frequency-gc as heatmap; reads KAT gcp tables;
-  gccov      length-gc-coverage of contigs in blobology like plot
-  seqcov     coverage along a sinle sequence
-
+  kcov         coverage-frequency distribution of kmers (with peak calling)
+  gcmx         coverage-frequency-gc as heatmap; reads KAT gcp tables;
+  gccov        length-gc-coverage of contigs in blobology like plot
+  seqcov       coverage along a sinle sequence
+  kcov-legacy  like kcov, but no ggplot and different peak calling approach
 EOF
+
 exit 0;
 }
 
@@ -22,6 +23,36 @@ check_bin(){
     hash $1 || { echo "$1 required in PATH" >&2; exit 1;}
 }
 
+Rrun(){
+    FUN=$1;
+    shift;
+
+    # quote some strings etc
+    #http://stackoverflow.com/questions/806906/how-do-i-test-if-a-variable-is-a-number-in-bash <- bad bash regex
+    #http://stackoverflow.com/questions/13790763/bash-regex-to-check-floating-point-numbers-from-user-input
+    OPTS=""
+    for OPT in "$@"; do
+        VAL=${OPT#*=};
+        if [ ${#OPT} -gt ${#VAL} ]; then
+            KEY=${OPT%%=*};
+            if ! ([[ $VAL =~ ^[-+]?[0-9]+\.?[0-9]*$ ]] || [[ $VAL =~ ^(TRUE|FALSE|NA|NULL)$ ]] ); then
+                VAL='"'$VAL'"';
+            fi
+            OPTS="$OPTS, $KEY=$VAL";
+        else
+            OPTS="$OPTS, "'"'"$OPT"'"';
+        fi;
+    done;
+
+    OPTS=${OPTS:2};
+    echo "$OPTS";
+    #echo "$@"; exit;
+
+    R --vanilla --slave -e "source('$BIN/../R/kmer.R'); $FUN($OPTS)";
+}
+
+
+##- MAIN ---------------------------------------------------------------------##
 ## prep
 [[ $# -eq 0 ]] && usage;
 SCRIPT=$(basename "$0");
@@ -62,26 +93,6 @@ while true; do
 done
 
 
-# quote some strings etc
-#http://stackoverflow.com/questions/806906/how-do-i-test-if-a-variable-is-a-number-in-bash <- bad bash regex
-#http://stackoverflow.com/questions/13790763/bash-regex-to-check-floating-point-numbers-from-user-input
-OPTS=""
-for OPT in "$@"; do
-    VAL=${OPT#*=};
-    if [ ${#OPT} -gt ${#VAL} ]; then
-        KEY=${OPT%%=*};
-        if ! ([[ $VAL =~ ^[-+]?[0-9]+\.?[0-9]*$ ]] || [[ $VAL =~ ^(TRUE|FALSE|NA|NULL)$ ]] ); then
-            VAL='"'$VAL'"';
-        fi
-        OPTS="$OPTS, $KEY=$VAL";
-    else
-        OPTS="$OPTS, "'"'"$OPT"'"';
-    fi;
-done;
-
-OPTS=${OPTS:2};
-echo "$OPTS";
-#echo "$@"; exit;
 
 ## prep
 if [[ $# -eq 0 || $HELP -gt 1 ]]; then
@@ -94,19 +105,10 @@ check_bin jellyfish;
 BIN="$(dirname "$(readlink -f "$0")")"
 
 case "$MODE" in
-    cov)
-        Rscript <(cat $BIN/../R/kmer.R; echo 'kmerPlot('$OPTS');') ;;
-        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); kmerPlot(params,'"$OPT"');') $@;;
-    gcmx)
-        Rscript <(cat $BIN/../R/kmer.R; echo 'gcmx('$OPTS');') ;;
-        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gcmx(params,'"$OPT"');') $@;;
-    gccov)
-        #echo 'gccov('$OPTS');'
-        Rscript <(cat $BIN/../R/kmer.R; echo 'gccov('$OPTS');') ;;
-        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); gccov(params,'"$OPT"');') $@;;
-    seqcov)
-        Rscript <(cat $BIN/../R/kmer.R; echo 'seqcov('$OPTS');') ;;
-        #Rscript <(cat $BIN/../R/kmer.R; echo 'params <- commandArgs(trailingOnly=T); seqcov(params,'"$OPT"');') $@;;
+    kcov|gcmx|gccov|seqcov)
+        Rrun $MODE $@;;
+    kcov-legacy)
+        Rrun kmerPlot $@;;
     *)
         echo "unknown mode: $MODE" 1>&2 && usage;;
 esac
