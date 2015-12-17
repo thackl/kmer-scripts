@@ -574,7 +574,7 @@ gcmx <- function(..., coverage.max=300, out="kmerPlot.pdf"){
 gccov <- function(..., out="gccov.pdf", length.min=1000, coverage.max=500,
                   tax.occ.min=1, bin.num=100, tax.ignore=FALSE, theme="gg",
                   palette="gg", length.min.scatter=0, jitter=FALSE,
-                  sample.scatter=0, width=10, height=6
+                  sample.scatter=0, width=10, height=6, sep="\t"
                   ){
 
     library(reshape2);
@@ -591,12 +591,14 @@ gccov <- function(..., out="gccov.pdf", length.min=1000, coverage.max=500,
     write("reading table", stderr());
     df.file <- c(...);
     df.fh <- OpenRead(df.file) # prevent R peek bug on <() constructs
-    df <- read.table(df.fh, header=F, fill=T, sep="\t");
+    df <- read.table(df.fh, header=F, sep=sep);
     close(df.fh)
+    if ( length(df[1,]) < 4 ){
+      stop('Expected at least 4 columns. Also check your column separator, default is "\t", use sep=" " to set to space')
+    }
 
     with.tax <- FALSE
-    if ( !tax.ignore &&
-            length(df[1,]) == 5 ){
+    if ( !tax.ignore && length(df[1,]) == 5 ){
         colnames(df) <- c("contig","length","GC","coverage","tax");
         with.tax <- TRUE
     }else{
