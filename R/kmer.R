@@ -332,6 +332,214 @@ rrm <- function(){
 
 }
 
+##-- kcov --##
+
+humanize_bp <- function(x, digits=1){
+  pre <- c("","k","M","G","T");
+  px <- as.integer(log10(x)/3)
+  v <- round(x/(10^(px*3)), digits=1)
+  return(paste(v, " ", pre[px+1], "bp", sep=""))
+}
+
+peaks_refine <- function(da, df){ # takes anscombe aprox cov, returns regular refined cov
+  peaks <- data.frame(cov=numeric(0), cnt=numeric(0), set=character(0), sd4=numeric(0), size=numeric(0), set=character(0))
+  for(ri in 1:nrow(da)){
+    ## get max region
+    df.covs <- df[df$cov >= anscombe_inv(da$cov[ri]-1) & df$cov < anscombe_inv(da$cov[ri]+1),]
+    ## get refined max
+    df.covs.max <- df.covs[which.max(df.covs$cnt),]
+    df.covs.max$cnt.a <- da$cnt[ri]
+    ## get +- sigma
+    cov.sd2.min <- anscombe_inv(anscombe(df.covs.max$cov)-2)
+    cov.sd2.max <- anscombe_inv(anscombe(df.covs.max$cov)+2)
+
+    df.covs.sd4 <- df[df$cov >= cov.sd2.min & df$cov < cov.sd2.max,]
+    df.covs.max$sd4 <- sum(df.covs.sd4$cnt) ## +- 2sd == approx 95% of data
+    df.covs.max$size <- df.covs.max$sd4 / 0.95
+
+    peaks <- rbind(peaks, df.covs.max)
+  }
+
+  peaks <- peaks[order(peaks$sd4, decreasing=T),]
+  peaks$peaks <- paste(humanize_bp(peaks$size), " / ", peaks$cov, "X", sep="")
+  peaks$peaks <- factor(peaks$peaks, levels=peaks$peaks)
+  return(peaks)
+}
+
+kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FALSE, theme=c("gg","bw","classic"),
+                 peak.size.min=10000, peak.label.angle=0, peak.label.hjust=.5, peak.label.size=3,
+                 plot.lines, plot.bars, plot.facet, plot.sizes,plot.peaks,plot.lines.width=.5,
+                 width=10, height=6
+){
+
+  ## args
+  if(! anscombe){
+    if(missing(plot.lines)) plot.lines=TRUE
+    if(missing(plot.peaks)) plot.peaks=TRUE
+    if(missing(plot.bars)) plot.bars=FALSE
+    if(missing(plot.facet)) plot.facet=FALSE
+    if(missing(plot.sizes)) plot.sizes=TRUE
+  }else{
+    if(missing(plot.lines)) plot.lines=FALSE
+    if(missing(plot.peaks)) plot.peaks=FALSE
+    if(missing(plot.bars)) plot.bars=TRUE
+    if(missing(plot.facet)) plot.facet=FALSE
+    if(missing(plot.sizes)) plot.sizes=TRUE
+  }
+
+  theme <- match.arg(theme)
+
+  ## read data
+  library(ggplot2)
+  files <- c(...);
+  df <- data.frame(cov=numeric(), cnt=numeric(), set=factor());
+
+  for (df.file in files){
+    write(paste("reading kmers: ", df.file), stderr());
+    df.tmp  <- data.frame;
+    if(grepl(".jf$", df.file, perl=TRUE)){
+      df.tmp <- read.table(pipe(paste('jellyfish histo', df.file, sep=" ")), header=F);
+    }else{
+      df.fh <- OpenRead(df.file) # prevent R peek bug on <() constructs
+      df.tmp <- read.table(df.fh, header=F);
+      close(df.fh)
+    }
+
+    df.tmp <- df.tmp[,1:2]
+    colnames(df.tmp) <- c("cov","cnt");
+    df.tmp$set <- factor(df.file)
+
+    df <- rbind(df, df.tmp)
+  }
+
+  ## anscombe transform
+  cov.max <- ifelse(coverage.max, coverage.max, max(df$cov))
+  cov.max.a <- anscombe_int(cov.max+ .5)
+
+  cov.min <- 10
+  cov.min.a <- anscombe_int(cov.min)
+
+  sets.n <- length(levels(df$set))
+
+  peaks.list <- by(df, df$set, function(df.set){
+    cov.max.set <- max(df.set$cov)
+    cov.max.set <- ifelse(cov.max.set > cov.max, cov.max, cov.max.set) # smaller cov max
+
+    #### create anscombe_int hist
+    #### deprecated: slow
+    ##da <- data.frame(cov=1:anscombe_int(cov.max.set))
+    ##da$cnt <- 0
+    ##da$set <- df.set$set[1]
+    ##for(i in cov.min:cov.max.set){
+    ##  i.a <- anscombe_int(df.set$cov[i])
+    ##  if(is.na(da$cnt[i.a])) next;
+    ##  da$cnt[i.a] <- da$cnt[i.a] + df.set$cnt[i]
+    ##}
+    ##print(head(da, n=10))
+
+    ## faster hist using factors + aggregate
+    df.set$cov.bin <- factor(anscombe_int(df.set$cov))
+    da <- aggregate(list(cnt=df.set$cnt), by=list(cov=df.set$cov.bin), FUN=sum)
+    da$cov <- as.numeric(levels(da$cov))[da$cov]
+    da$set <- df.set$set[1]
+
+    # very dirty
+    da$cnt[da$cnt < peak.size.min/3] <- 0
+
+    ## find and refine local maxima
+    da.cnt.max.i <- localMaxima(da$cnt)
+    da.max <- da[da.cnt.max.i,]
+    da.max <- da.max[da.max$cov > cov.min,]
+    if(nrow(da.max) < 1) da.max <- da[5,] # use cov 5 as default peak
+    da.peaks <- peaks_refine(da.max, df.set)
+
+    total.size <- sum(apply(df.set[-1:-2,1:2], MARGIN=1, FUN=prod)) # ignore first 2 kmers
+    total.size.adj <- humanize_bp(total.size / da.peaks$cov[1])
+
+    return(list(da=da, peaks=da.peaks, total=total.size.adj))
+  })
+
+  peaks <- do.call(rbind.data.frame, lapply(peaks.list, function(x){x$peaks}))
+  da <- do.call(rbind.data.frame, lapply(peaks.list, function(x){x$da}))
+
+  levels(df$set) <- sapply(levels(df$set), function(set) paste(set, " (", peaks.list[[set]]$total, ")", sep=""))
+  levels(da$set) <- sapply(levels(da$set), function(set) paste(set, " (", peaks.list[[set]]$total, ")", sep=""))
+  levels(peaks$set) <- sapply(levels(peaks$set), function(set) paste(set, " (", peaks.list[[set]]$total, ")", sep=""))
+
+  gg <- ggplot(df, environment=environment());
+
+  # theme + legend
+
+  gg.theme <- theme(
+    legend.justification=c(1,1),
+    legend.position=c(1,1),
+    legend.box.just = "right",
+    legend.text=element_text(size=8),
+    text = element_text(size=10)
+  )
+
+  if (theme == "bw") gg.theme <- theme_bw() + gg.theme;
+  if (theme == "classic") gg.theme <- theme_classic() + gg.theme
+  gg <- gg + gg.theme
+
+  gg <- gg + labs(x="coverage", y="frequency")  #,title="kmer-coverage of data sets")
+  gg <- gg + scale_shape_identity("peaks")
+
+  if(! anscombe){
+    cnt.max <- ifelse(count.max, count.max, peaks$cnt[which.max(peaks$size)]*1.2)
+    gg <- gg + coord_cartesian(ylim=c(0, cnt.max))
+    #gg <- gg + ylim(0, cnt.max)
+
+    gg <- gg + xlim(0, cov.max)
+    ## dist
+    if(plot.bars) gg <- gg + geom_bar(aes(x=cov, weight=cnt/5, fill=set), stat="bin", binwidth=5, position = "dodge")
+    if(plot.lines) gg <- gg + geom_line(aes(x=cov, y=cnt, group=set, colour=set), size=plot.lines.width);
+    ## peaks
+    if(plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=cov, y=cnt, colour=set, shape=17))
+    if(plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=cov, y=cnt, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
+    ## facet
+    if(plot.facet) gg <- gg + facet_wrap(~set)
+    #for(p in peaks$cov){
+    #  gg <- gg + geom_vline(xintercept=p)
+    #}
+  }else{
+    print(peaks$cnt.a[which.max(peaks$size)])
+    cnt.max <- ifelse(count.max, count.max, peaks$cnt.a[which.max(peaks$size)]*1.2) # bins are sd 1 -> max bin is ~33% of peak
+    gg <- gg + coord_cartesian(ylim=c(0, cnt.max))
+    #gg <- gg + ylim(0, cnt.max)
+
+    x.breaks <- anscombe_breaks(cov.max);
+    gg <- gg + scale_x_continuous(breaks=x.breaks, labels=anscombe_inv, limits=c(5, cov.max.a))
+
+    ## dist
+    ## plot by binning from raw data frame on-the-fly in anscombe space
+    ## this direct plot does no binning for lines, hence they scale differently from bars
+    ## if(plot.bars) gg <- gg + geom_bar(aes(x=anscombe(cov), weight=cnt), stat="bin", binwidth=1)
+    ## if(plot.lines) gg <- gg + geom_line(aes(x=anscombe(cov), y=cnt, group=set, colour=set));
+    ## plotting anscombe data.frame directly
+    if(plot.bars) gg <- gg + geom_bar(data=da, aes(x=cov, y=cnt, fill=set), stat="identity", width=1, position="dodge")
+    if(plot.lines) gg <- gg + geom_line(data=da, aes(x=cov, y=cnt, colour=set), size=plot.lines.width);
+    ## peaks
+    if(plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, colour=set, shape=17))
+    if(plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
+    ## facet
+    if(plot.facet) gg <- gg + facet_wrap(~set)
+  }
+
+  ##- plotting ----------------------------------------------------------------------##
+  write("plotting", stderr());
+
+  if(grepl(".pdf$", out)){
+    pdf(out, width=width, height=height);
+  }else if(grepl(".png$", out)){
+    png(out, width=width*100, height=height*100);
+  }else{
+    stop("only .pdf and .png output supported");
+  }
+  print(gg)
+  dev.off();
+}
+
 ##-- gctile --##
 
 gcmx <- function(..., coverage.max=300, out="kmerPlot.pdf"){
