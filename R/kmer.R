@@ -801,13 +801,14 @@ asmcov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
 }
 
 anscombe <- function(x){2*sqrt(x + 3/8)}
-anscombe_int <- function(x){round(2*sqrt(x + 3/8), digits=0)}
+anscombe_round <- function(x, digits=0){round(2*sqrt(x + 3/8), digits=digits)}
+anscombe_int <- function(x){as.integer(2*sqrt(x + 3/8))}
 anscombe_inv <- function(x){(x/2)^2 - 3/8}
 
 anscombe_breaks <- function(max, list=FALSE){
     ex <- as.integer(log10(max))+2
     b.n <- as.vector(sapply(1:ex, function(x){c(.1,.2,.5) * 10^x} ))
-    b.n <- b.n[1:which(b.n > max)[1]]
+    b.n <- b.n[3:which(b.n > max)[1]]
     b.a <- sapply(b.n, anscombe)
     d.a <- max(b.a)/15
 
