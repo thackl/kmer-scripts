@@ -1041,6 +1041,7 @@ anscombe_breaks <- function(max, list=FALSE){
 
 get_legend<-function(myggplot){
   tmp <- ggplot_gtable(ggplot_build(myggplot))
+  unlink("Rplots.pdf")
   leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
   legend <- tmp$grobs[[leg]]
   return(legend)
