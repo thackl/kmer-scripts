@@ -413,7 +413,10 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
   }
 
   ## anscombe transform
-  cov.max <- ifelse(coverage.max, coverage.max, max(df$cov))
+  cov.max <- c();
+  if(coverage.max == 0) cov.max <- max(df$cov)
+  else cov.max <- coverage.max
+
   cov.max.a <- anscombe_int(cov.max+ .5)
 
   cov.min <- 10
@@ -422,11 +425,11 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
   sets.n <- length(levels(df$set))
 
   peaks.list <- by(df, df$set, function(df.set){
-    cov.max.set <- max(df.set$cov)
-    cov.max.set <- ifelse(cov.max.set > cov.max, cov.max, cov.max.set) # smaller cov max
 
     #### create anscombe_int hist
     #### deprecated: slow
+    ##cov.max.set <- max(df.set$cov)
+    ##cov.max.set <- ifelse(cov.max.set > cov.max, cov.max, cov.max.set) # smaller cov max
     ##da <- data.frame(cov=1:anscombe_int(cov.max.set))
     ##da$cnt <- 0
     ##da$set <- df.set$set[1]
@@ -449,26 +452,41 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
     ## find and refine local maxima
     da.cnt.max.i <- localMaxima(da$cnt)
     da.max <- da[da.cnt.max.i,]
-    da.max <- da.max[da.max$cov > cov.min,]
-    if(nrow(da.max) < 1) da.max <- da[5,] # use cov 5 as default peak
-    da.peaks <- peaks_refine(da.max, df.set)
+    da.max <- da.max[da.max$cov > cov.min.a & da.max$cov < cov.max.a, ]
+    #if(nrow(da.max) < 1) da.max <- da[5,] # use cov 5 as default peak
+    total.size.adj <- NA
+    da.peaks <- c()
+    if(nrow(da.max) > 0) { # has peaks
+      da.peaks <- peaks_refine(da.max, df.set)
 
-    total.size <- sum(apply(df.set[-1:-2,1:2], MARGIN=1, FUN=prod)) # ignore first 2 kmers
-    total.size.adj <- humanize_bp(total.size / da.peaks$cov[1])
-
+      total.size <- sum(apply(df.set[-1:-2,1:2], MARGIN=1, FUN=prod)) # ignore first 2 kmers
+      total.size.adj <- humanize_bp(total.size / da.peaks$cov[1])
+    }else{
+      da.peaks <- da.max # empty df
+    }
     return(list(da=da, peaks=da.peaks, total=total.size.adj))
   })
 
   peaks <- do.call(rbind.data.frame, lapply(peaks.list, function(x){x$peaks}))
+  has.peaks <- ifelse(nrow(peaks) > 0, TRUE, FALSE)
   da <- do.call(rbind.data.frame, lapply(peaks.list, function(x){x$da}))
 
-  levels(df$set) <- sapply(levels(df$set), function(set) paste(set, " (", peaks.list[[set]]$total, ")", sep=""))
-  levels(da$set) <- sapply(levels(da$set), function(set) paste(set, " (", peaks.list[[set]]$total, ")", sep=""))
-  levels(peaks$set) <- sapply(levels(peaks$set), function(set) paste(set, " (", peaks.list[[set]]$total, ")", sep=""))
+  ## add size to set label
+  add_size_to_set <- function(set){
+    if(! is.na(peaks.list[[set]]$total)){
+      paste(set, " (", peaks.list[[set]]$total, ")", sep="")
+    }else{
+      set
+    }
+  }
+  levels(df$set) <- sapply(levels(df$set), add_size_to_set)
+  levels(da$set) <- sapply(levels(da$set), add_size_to_set)
+  levels(peaks$set) <- sapply(levels(peaks$set), add_size_to_set)
 
+  ## plot
   gg <- ggplot(df, environment=environment());
 
-  # theme + legend
+  ## theme + legend
 
   gg.theme <- theme(
     legend.justification=c(1,1),
@@ -486,8 +504,12 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
   gg <- gg + scale_shape_identity("peaks")
 
   if(! anscombe){
-    cnt.max <- ifelse(count.max, count.max, peaks$cnt[which.max(peaks$size)]*1.2)
-    gg <- gg + coord_cartesian(ylim=c(0, cnt.max))
+    cnt.max <- c()
+    if(count.max) cnt.max <- count.max
+    else if(has.peaks) cnt.max <- peaks$cnt[which.max(peaks$size)]*1.2 # bins are sd 1 -> max bin is ~33% of peak
+    else cnt.max <- max(df$cnt[-1:-2]) # ignore cov==1 and cov==2
+
+    gg <- gg + coord_cartesian(ylim=c(-cnt.max*0.05, cnt.max))
     #gg <- gg + ylim(0, cnt.max)
 
     gg <- gg + xlim(0, cov.max)
@@ -495,8 +517,8 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
     if(plot.bars) gg <- gg + geom_bar(aes(x=cov, weight=cnt/5, fill=set), stat="bin", binwidth=5, position = "dodge")
     if(plot.lines) gg <- gg + geom_line(aes(x=cov, y=cnt, group=set, colour=set), size=plot.lines.width);
     ## peaks
-    if(plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=cov, y=cnt, colour=set, shape=17))
-    if(plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=cov, y=cnt, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
+    if(has.peaks && plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=cov, y=cnt, colour=set, shape=17))
+    if(has.peaks && plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=cov, y=cnt, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
     ## facet
     if(plot.facet) gg <- gg + facet_wrap(~set)
     #for(p in peaks$cov){
@@ -504,12 +526,16 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
     #}
   }else{
     print(peaks$cnt.a[which.max(peaks$size)])
-    cnt.max <- ifelse(count.max, count.max, peaks$cnt.a[which.max(peaks$size)]*1.2) # bins are sd 1 -> max bin is ~33% of peak
-    gg <- gg + coord_cartesian(ylim=c(0, cnt.max))
-    #gg <- gg + ylim(0, cnt.max)
+    cnt.max <- c()
+    if(count.max) cnt.max <- count.max
+    else if(has.peaks) cnt.max <- peaks$cnt.a[which.max(peaks$size)]*1.2 # bins are sd 1 -> max bin is ~33% of peak
+    else cnt.max <- max(da$cnt[-1:-3])
+
+    gg <- gg + ylim(0, NA)
+    gg <- gg + coord_cartesian(ylim=c(-cnt.max*0.05, cnt.max))
 
     x.breaks <- anscombe_breaks(cov.max);
-    gg <- gg + scale_x_continuous(breaks=x.breaks, labels=anscombe_inv, limits=c(5, cov.max.a))
+    gg <- gg + scale_x_continuous(breaks=x.breaks, labels=anscombe_inv, limits=c(2, cov.max.a))
 
     ## dist
     ## plot by binning from raw data frame on-the-fly in anscombe space
@@ -520,8 +546,8 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
     if(plot.bars) gg <- gg + geom_bar(data=da, aes(x=cov, y=cnt, fill=set), stat="identity", width=1, position="dodge")
     if(plot.lines) gg <- gg + geom_line(data=da, aes(x=cov, y=cnt, colour=set), size=plot.lines.width);
     ## peaks
-    if(plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, colour=set, shape=17))
-    if(plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
+    if(has.peaks && plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, colour=set, shape=17))
+    if(has.peaks && plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
     ## facet
     if(plot.facet) gg <- gg + facet_wrap(~set)
   }
