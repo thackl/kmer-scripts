@@ -597,7 +597,7 @@ gcmx <- function(..., coverage.max=300, out="kmerPlot.pdf"){
 }
 
 ##-- gccov --#
-gccov <- function(..., out="gccov.pdf", length.min=1000, coverage.max=500,
+gccov <- function(..., out="gccov.pdf", length.min=1000, coverage.max=300,
                   tax.occ.min=1, bin.num=100, tax.ignore=FALSE, theme="gg",
                   palette="gg", length.min.scatter=0, jitter=FALSE,
                   sample.scatter=0, width=10, height=6, sep="\t"
@@ -901,7 +901,7 @@ seqcov <- function(..., out="kmer-plot-seqcov.pdf"){
 }
 
 
-asmcov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=500,
+asmcov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=300,
                    bin.num=100, anscombe=FALSE, theme="gg", palette="gg",
                    width=10, height=6, kmer.histo=""
                    ){
