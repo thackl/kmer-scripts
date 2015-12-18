@@ -394,7 +394,10 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
   files <- c(...);
   df <- data.frame(cov=numeric(), cnt=numeric(), set=factor());
 
-  for (df.file in files){
+  if(length(files) < 1) stop("Input files required")
+
+  for (i in 1:length(files)){
+    df.file <- files[i]
     write(paste("reading kmers: ", df.file), stderr());
     df.tmp  <- data.frame;
     if(grepl(".jf$", df.file, perl=TRUE)){
@@ -407,7 +410,9 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
 
     df.tmp <- df.tmp[,1:2]
     colnames(df.tmp) <- c("cov","cnt");
-    df.tmp$set <- factor(df.file)
+    print(names(files)[i])
+    df.set.id <- (factor(ifelse(is.null(names(files)[i]) || names(files)[i]=="", df.file, names(files)[i])))
+    df.tmp$set <- df.set.id
 
     df <- rbind(df, df.tmp)
   }
