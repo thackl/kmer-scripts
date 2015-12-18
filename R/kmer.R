@@ -366,26 +366,12 @@ peaks_refine <- function(da, df){ # takes anscombe aprox cov, returns regular re
   return(peaks)
 }
 
-kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FALSE, theme=c("gg","bw","classic"),
+kcov <- function(..., out="kcov.pdf", coverage.max=300, count.max=0, anscombe=FALSE, theme=c("gg","bw","classic"),
+                 plot.lines=!anscombe, plot.bars=anscombe, plot.facet=anscombe, plot.lines.width=.5,
+                 plot.peaks=!anscombe, plot.peak.labels=plot.peaks, plot.peak.points=plot.peaks, plot.peak.ranges=plot.peaks,
                  peak.size.min=10000, peak.label.angle=0, peak.label.hjust=.5, peak.label.size=3,
-                 plot.lines, plot.bars, plot.facet, plot.sizes,plot.peaks,plot.lines.width=.5,
                  width=10, height=6
 ){
-
-  ## args
-  if(! anscombe){
-    if(missing(plot.lines)) plot.lines=TRUE
-    if(missing(plot.peaks)) plot.peaks=TRUE
-    if(missing(plot.bars)) plot.bars=FALSE
-    if(missing(plot.facet)) plot.facet=FALSE
-    if(missing(plot.sizes)) plot.sizes=TRUE
-  }else{
-    if(missing(plot.lines)) plot.lines=FALSE
-    if(missing(plot.peaks)) plot.peaks=FALSE
-    if(missing(plot.bars)) plot.bars=TRUE
-    if(missing(plot.facet)) plot.facet=FALSE
-    if(missing(plot.sizes)) plot.sizes=TRUE
-  }
 
   theme <- match.arg(theme)
 
@@ -541,8 +527,9 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
     if(plot.bars) gg <- gg + geom_bar(aes(x=cov, weight=cnt/5, fill=set), stat="bin", binwidth=5, position = "dodge")
     if(plot.lines) gg <- gg + geom_line(aes(x=cov, y=cnt, group=set, colour=set), size=plot.lines.width);
     ## peaks
-    if(has.peaks && plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=cov, y=cnt, colour=set, shape=17))
-    if(has.peaks && plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=cov, y=cnt, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
+    if(has.peaks && plot.peak.points) gg <- gg + geom_point(data=peaks, aes(x=cov, y=cnt, colour=set, shape=17))
+    if(has.peaks && plot.peak.ranges) gg <- gg + geom_segment(data=peaks, aes(x=cov-2*sqrt(cov), xend=cov+2*sqrt(cov), y=cnt, yend=cnt), colour="#888888")
+    if(has.peaks && plot.peak.labels) gg <- gg + geom_text(data=peaks, aes(x=cov, y=cnt, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
     ## facet
     if(plot.facet) gg <- gg + facet_wrap(~set)
     #for(p in peaks$cov){
@@ -570,8 +557,9 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
     if(plot.bars) gg <- gg + geom_bar(data=da, aes(x=cov, y=cnt, fill=set), stat="identity", width=1, position="dodge")
     if(plot.lines) gg <- gg + geom_line(data=da, aes(x=cov, y=cnt, colour=set), size=plot.lines.width);
     ## peaks
-    if(has.peaks && plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, colour=set, shape=17))
-    if(has.peaks && plot.sizes) gg <- gg + geom_text(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
+    if(has.peaks && plot.peak.points) gg <- gg + geom_point(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, colour=set, shape=17))
+    if(has.peaks && plot.peak.ranges) gg <- gg + geom_segment(data=peaks, aes(x=anscombe_int(cov)-2, xend=anscombe_int(cov)+2, y=cnt.a, yend=cnt.a), linetype=1, colour="#888888")
+    if(has.peaks && plot.peak.labels) gg <- gg + geom_text(data=peaks, aes(x=anscombe_int(cov), y=cnt.a, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
     ## facet
     if(plot.facet) gg <- gg + facet_wrap(~set)
   }
