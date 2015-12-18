@@ -424,7 +424,7 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
 
   cov.max.a <- anscombe_int(cov.max+ .5)
 
-  cov.min <- 10
+  cov.min <- 1
   cov.min.a <- anscombe_int(cov.min)
 
   sets.n <- length(levels(df$set))
@@ -453,12 +453,31 @@ kcov <- function(..., out="kcov.pdf", coverage.max=500, count.max=0, anscombe=FA
 
     # very dirty
     da$cnt[da$cnt < peak.size.min/3] <- 0
+    da <- da[da$cov > cov.min.a & da$cov < cov.max.a, ]
 
     ## find and refine local maxima
     da.cnt.max.i <- localMaxima(da$cnt)
+    da.cnt.max.i <- da.cnt.max.i[da.cnt.max.i>3]
+
+    ## remove peaks that are small compared to local env
+    ## local env == +-2 anscombe
+    ## min delta needs to be < 0.8 * peak
+    da.cnt.max.i <- vapply(da.cnt.max.i, FUN.VALUE=numeric(1), FUN=function(i){
+      me <- da[i,]
+      nb.i <- c(i-2,i-1,i+1,i+2);
+      nb.i <- nb.i[nb.i > 0]
+      nb <- da[nb.i,]
+
+      delta <- min(nb$cnt/me$cnt)
+      return(ifelse (delta > 0.75, 0, i))
+    })
+
     da.max <- da[da.cnt.max.i,]
-    da.max <- da.max[da.max$cov > cov.min.a & da.max$cov < cov.max.a, ]
-    #if(nrow(da.max) < 1) da.max <- da[5,] # use cov 5 as default peak
+
+    ## deprecated
+    ##da.max <- da.max[da.max$cov > cov.min.a & da.max$cov < cov.max.a, ]
+    ##if(nrow(da.max) < 1) da.max <- da[5,] # use cov 5 as default peak
+
     total.size.adj <- NA
     da.peaks <- c()
     if(nrow(da.max) > 0) { # has peaks
