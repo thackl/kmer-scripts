@@ -334,10 +334,10 @@ rrm <- function(){
 
 ##-- kcov --##
 
-humanize_bp <- function(x, digits=1){
+humanize_bp <- function(x, digits=2){
   pre <- c("","k","M","G","T");
   px <- as.integer(log10(x)/3)
-  v <- round(x/(10^(px*3)), digits=1)
+  v <- signif(x/(10^(px*3)), digits=digits)
   return(paste(v, " ", pre[px+1], "bp", sep=""))
 }
 
