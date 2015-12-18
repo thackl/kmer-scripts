@@ -592,7 +592,7 @@ gcmx <- function(..., coverage.max=300, out="kmerPlot.pdf"){
     mt <- read.table(mt.file, header=F);
     mt <- mt[,2:(dim(mt)[2]-1)]; # remove first and last col - aggregate of missing values
     #z.max <- max(mt[,(dim(mt)[2]/5):dim(mt)[2]]);
-    z.max <- max(mt[, -1:-5]); # ignore first 5 kmers for max
+    z.max <- max(mt[, -1:-10]); # ignore first 5 kmers for max
 
     mt.df <- expand.grid(y=1:dim(mt)[1], x=1:dim(mt)[2]);
     mt.df$z <- unlist(mt);
