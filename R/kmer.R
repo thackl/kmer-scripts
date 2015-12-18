@@ -367,7 +367,7 @@ peaks_refine <- function(da, df){ # takes anscombe aprox cov, returns regular re
 }
 
 kcov <- function(..., out="kcov.pdf", coverage.max=300, count.max=0, anscombe=FALSE, theme=c("gg","bw","classic"),
-                 plot.lines=!anscombe, plot.bars=anscombe, plot.facet=anscombe, plot.lines.width=.5,
+                 plot.lines=!anscombe, plot.bars=anscombe, plot.facet, plot.lines.width=.5,
                  plot.peaks=!anscombe, plot.peak.labels=plot.peaks, plot.peak.points=plot.peaks, plot.peak.ranges=plot.peaks,
                  peak.size.min=10000, peak.label.angle=0, peak.label.hjust=.5, peak.label.size=3,
                  width=10, height=6
@@ -378,6 +378,9 @@ kcov <- function(..., out="kcov.pdf", coverage.max=300, count.max=0, anscombe=FA
   ## read data
   library(ggplot2)
   files <- c(...);
+
+  if(missing(plot.facet)) plot.facet <- ifelse(anscombe && length(files)>1, TRUE, FALSE)
+
   df <- data.frame(cov=numeric(), cnt=numeric(), set=factor());
 
   if(length(files) < 1) stop("Input files required")
