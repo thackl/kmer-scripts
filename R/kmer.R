@@ -341,6 +341,49 @@ humanize_bp <- function(x, digits=2){
   return(paste(v, " ", pre[px+1], "bp", sep=""))
 }
 
+peaks_call <- function(df.set, peak.size.min=1000, cov.min=1, cov.max=10000){
+  ## faster hist using factors + aggregate
+  df.set$cov.bin <- factor(anscombe_int(df.set$cov))
+  da <- aggregate(list(cnt=df.set$cnt), by=list(cov=df.set$cov.bin), FUN=sum)
+  da$cov <- as.numeric(levels(da$cov))[da$cov]
+  da$set <- df.set$set[1]
+
+  # very dirty
+  da$cnt[da$cnt < peak.size.min/3] <- 0
+  da <- da[da$cov > anscombe(cov.min) & da$cov < anscombe(cov.max), ]
+
+  ## find and refine local maxima
+  da.cnt.max.i <- localMaxima(da$cnt)
+  da.cnt.max.i <- da.cnt.max.i[da.cnt.max.i>3]
+
+  ## remove peaks that are small compared to local env
+  ## local env == +-2 anscombe
+  ## min delta needs to be < 0.8 * peak
+  da.cnt.max.i <- vapply(da.cnt.max.i, FUN.VALUE=numeric(1), FUN=function(i){
+    me <- da[i,]
+    nb.i <- c(i-2,i-1,i+1,i+2);
+    nb.i <- nb.i[nb.i > 0]
+    nb <- da[nb.i,]
+
+    delta <- min(nb$cnt/me$cnt)
+    return(ifelse (delta > 0.75, 0, i))
+  })
+
+  da.max <- da[da.cnt.max.i,]
+
+  total.size.adj <- NA
+  da.peaks <- c()
+  if(nrow(da.max) > 0) { # has peaks
+    da.peaks <- peaks_refine(da.max, df.set)
+
+    total.size <- sum(apply(df.set[-1:-2,1:2], MARGIN=1, FUN=prod)) # ignore first 2 kmers
+    total.size.adj <- humanize_bp(total.size / da.peaks$cov[1])
+  }else{
+    da.peaks <- da.max # empty df
+  }
+  return(list(da=da, peaks=da.peaks, total=total.size.adj))
+}
+
 peaks_refine <- function(da, df){ # takes anscombe aprox cov, returns regular refined cov
   peaks <- data.frame(cov=numeric(0), cnt=numeric(0), set=character(0), sd4=numeric(0), size=numeric(0), set=character(0))
   for(ri in 1:nrow(da)){
@@ -418,67 +461,7 @@ kcov <- function(..., out="kcov.pdf", coverage.max=300, count.max=0, anscombe=FA
 
   sets.n <- length(levels(df$set))
 
-  peaks.list <- by(df, df$set, function(df.set){
-
-    #### create anscombe_int hist
-    #### deprecated: slow
-    ##cov.max.set <- max(df.set$cov)
-    ##cov.max.set <- ifelse(cov.max.set > cov.max, cov.max, cov.max.set) # smaller cov max
-    ##da <- data.frame(cov=1:anscombe_int(cov.max.set))
-    ##da$cnt <- 0
-    ##da$set <- df.set$set[1]
-    ##for(i in cov.min:cov.max.set){
-    ##  i.a <- anscombe_int(df.set$cov[i])
-    ##  if(is.na(da$cnt[i.a])) next;
-    ##  da$cnt[i.a] <- da$cnt[i.a] + df.set$cnt[i]
-    ##}
-    ##print(head(da, n=10))
-
-    ## faster hist using factors + aggregate
-    df.set$cov.bin <- factor(anscombe_int(df.set$cov))
-    da <- aggregate(list(cnt=df.set$cnt), by=list(cov=df.set$cov.bin), FUN=sum)
-    da$cov <- as.numeric(levels(da$cov))[da$cov]
-    da$set <- df.set$set[1]
-
-    # very dirty
-    da$cnt[da$cnt < peak.size.min/3] <- 0
-    da <- da[da$cov > cov.min.a & da$cov < cov.max.a, ]
-
-    ## find and refine local maxima
-    da.cnt.max.i <- localMaxima(da$cnt)
-    da.cnt.max.i <- da.cnt.max.i[da.cnt.max.i>3]
-
-    ## remove peaks that are small compared to local env
-    ## local env == +-2 anscombe
-    ## min delta needs to be < 0.8 * peak
-    da.cnt.max.i <- vapply(da.cnt.max.i, FUN.VALUE=numeric(1), FUN=function(i){
-      me <- da[i,]
-      nb.i <- c(i-2,i-1,i+1,i+2);
-      nb.i <- nb.i[nb.i > 0]
-      nb <- da[nb.i,]
-
-      delta <- min(nb$cnt/me$cnt)
-      return(ifelse (delta > 0.75, 0, i))
-    })
-
-    da.max <- da[da.cnt.max.i,]
-
-    ## deprecated
-    ##da.max <- da.max[da.max$cov > cov.min.a & da.max$cov < cov.max.a, ]
-    ##if(nrow(da.max) < 1) da.max <- da[5,] # use cov 5 as default peak
-
-    total.size.adj <- NA
-    da.peaks <- c()
-    if(nrow(da.max) > 0) { # has peaks
-      da.peaks <- peaks_refine(da.max, df.set)
-
-      total.size <- sum(apply(df.set[-1:-2,1:2], MARGIN=1, FUN=prod)) # ignore first 2 kmers
-      total.size.adj <- humanize_bp(total.size / da.peaks$cov[1])
-    }else{
-      da.peaks <- da.max # empty df
-    }
-    return(list(da=da, peaks=da.peaks, total=total.size.adj))
-  })
+  peaks.list <- by(df, df$set, peaks_call, peak.size.min=peak.size.min, cov.max=cov.max)
 
   peaks <- do.call(rbind.data.frame, lapply(peaks.list, function(x){x$peaks}))
   has.peaks <- ifelse(nrow(peaks) > 0, TRUE, FALSE)
@@ -530,7 +513,7 @@ kcov <- function(..., out="kcov.pdf", coverage.max=300, count.max=0, anscombe=FA
     if(plot.bars) gg <- gg + geom_bar(aes(x=cov, weight=cnt/5, fill=set), stat="bin", binwidth=5, position = "dodge")
     if(plot.lines) gg <- gg + geom_line(aes(x=cov, y=cnt, group=set, colour=set), size=plot.lines.width);
     ## peaks
-    if(has.peaks && plot.peak.points) gg <- gg + geom_point(data=peaks, aes(x=cov, y=cnt, colour=set, shape=17))
+    if(has.peaks && plot.peak.points) gg <- gg + geom_point(data=peaks, aes(x=cov, y=cnt, colour=set), shape=17)
     if(has.peaks && plot.peak.ranges) gg <- gg + geom_segment(data=peaks, aes(x=cov-2*sqrt(cov), xend=cov+2*sqrt(cov), y=cnt, yend=cnt), colour="#888888")
     if(has.peaks && plot.peak.labels) gg <- gg + geom_text(data=peaks, aes(x=cov, y=cnt, label=peaks, angle=peak.label.angle, hjust=peak.label.hjust, vjust=-1), size=peak.label.size)
     ## facet
