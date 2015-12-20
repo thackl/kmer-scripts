@@ -566,32 +566,39 @@ kcov <- function(..., out="kcov.pdf", coverage.max=300, count.max=0, anscombe=FA
 
 ##-- gctile --##
 
-gcmx <- function(..., coverage.max=300, out="kmerPlot.pdf"){
-    library(reshape2);
-    library(ggplot2);
-    library(scales);
+gcmx <- function(..., coverage.max=300, out="gcmx.pdf",
+                 palette="Spectral", palette.reverse=FALSE,
+                 plot.peaks=TRUE
+){
+  library(reshape2);
+  library(ggplot2);
+  library(scales);
+  library(RColorBrewer);
 
-    mt.file <- c(...);
-    mt <- read.table(mt.file, header=F);
-    mt <- mt[,2:(dim(mt)[2]-1)]; # remove first and last col - aggregate of missing values
-    #z.max <- max(mt[,(dim(mt)[2]/5):dim(mt)[2]]);
-    z.max <- max(mt[, -1:-10]); # ignore first 5 kmers for max
+  cls <- brewer.pal(6, palette)
+  if(!palette.reverse) cls <- rev(cls)
 
-    mt.df <- expand.grid(y=1:dim(mt)[1], x=1:dim(mt)[2]);
-    mt.df$z <- unlist(mt);
+  mt.file <- c(...);
+  mt <- read.table(mt.file, header=F);
+  mt <- mt[,2:(dim(mt)[2]-1)]; # remove first and last col - aggregate of missing values
+  df <- expand.grid(set=1:dim(mt)[1], cov=1:dim(mt)[2]);
+  df$cnt <- unlist(mt);
 
-    #cls <- rev(rainbow(6))
-    #cls <- cls[-1]
-    #cls <- c("darkblue", "cyan", "green", "yellow", "red");
-    cls <- rev(c("#6a0000", "#d40000","#fb8b00", "#fddf01", "#90ff36", "#90fcfc", "#020061"));
-    gg <- ggplot(mt.df, environment=environment())
-    gg <- gg + geom_tile(aes(x=x, y=y, fill=z))
-          #  scale_x_continuous(limits=c(0,500))
-    gg <- gg + scale_fill_gradientn("kmer frequency", colours=cls, limits=c(0,z.max), na.value=cls[length(cls)]);
-    gg <- gg + labs(x="coverage", y="GC coer kmer")
-    if(coverage.max) gg <- gg + xlim(c(0,coverage.max))
+  peaks.list <- by(df, df$set, peaks_call, cov.max=coverage.max)
 
-    ggsave(gg, file=out, width=10, height=6);
+  peaks <- do.call(rbind.data.frame, lapply(peaks.list, function(x){x$peaks}))
+  has.peaks <- ifelse(nrow(peaks) > 0, TRUE, FALSE)
+  cnt.max <- ifelse(has.peaks, max(peaks$cnt), max(df$cnt[-1:-10])); # ignore first 10 kmers for max
+
+  gg <- ggplot(df, environment=environment())
+  gg <- gg + geom_tile(aes(x=cov, y=set, fill=cnt, colour=cnt))
+  if(has.peaks && plot.peaks) gg <- gg + geom_point(data=peaks, aes(x=cov, y=set), shape=18, colour="#888888")          #  scale_x_continuous(limits=c(0,500))
+  gg <- gg + scale_fill_gradientn("kmer frequency", colours=cls, limits=c(0,cnt.max), na.value=cls[length(cls)]);
+  gg <- gg + scale_colour_gradientn("kmer frequency", colours=cls, limits=c(0,cnt.max), na.value=cls[length(cls)]);
+  gg <- gg + labs(x="coverage", y="GC count per kmer")
+  if(coverage.max) gg <- gg + xlim(c(0,coverage.max))
+
+  ggsave(gg, file=out, width=10, height=6);
 }
 
 ##-- gccov --#
