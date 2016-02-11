@@ -11,6 +11,7 @@ Plot kmer distributions either from jellyfish histos oder hashes.
 MODEs:
   kcov         coverage-frequency distribution of kmers (with peak calling)
   gcmx         coverage-frequency-gc as heatmap; reads KAT gcp tables;
+  asmcov       length-coverage histogram plot for assembly
   gccov        length-gc-coverage of contigs in blobology like plot
   seqcov       coverage along a sinle sequence
   kcov-legacy  like kcov, but no ggplot and different peak calling approach
@@ -35,7 +36,7 @@ Rrun(){
         VAL=${OPT#*=};
         if [ ${#OPT} -gt ${#VAL} ]; then
             KEY=${OPT%%=*};
-            if ! ([[ $VAL =~ ^[-+]?[0-9]+\.?[0-9]*$ ]] || [[ $VAL =~ ^(TRUE|FALSE|NA|NULL)$ ]] ); then
+            if ! ([[ $VAL =~ ^[-+]?[0-9]+\.?[0-9]*$ ]] || [[ $VAL =~ ^(T|F|TRUE|FALSE|NA|NULL)$ ]] ); then
                 VAL='"'$VAL'"';
             fi
             OPTS="$OPTS, $KEY=$VAL";
@@ -105,7 +106,7 @@ check_bin jellyfish;
 BIN="$(dirname "$(readlink -f "$0")")"
 
 case "$MODE" in
-    kcov|gcmx|gccov|seqcov)
+    kcov|gcmx|gccov|seqcov|asmcov)
         Rrun $MODE $@;;
     kcov-legacy)
         Rrun kmerPlot $@;;

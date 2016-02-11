@@ -908,7 +908,7 @@ seqcov <- function(..., out="kmer-plot-seqcov.pdf"){
 
 asmcov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=300,
                    bin.num=100, anscombe=FALSE, theme="gg", palette="gg",
-                   width=10, height=6, kmer.histo=""
+                   width=10, height=6, kmer.histo=NULL, plot.facet.ncol=1
                    ){
 
     library(reshape2);
@@ -923,20 +923,28 @@ asmcov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=300,
     files <- c(...);
     df <- data.frame(contig=character(0), length=numeric(0), GC=numeric(0), coverage=numeric(0), assembly=character(0));
 
-    for (df.file in files){
+    if(length(files) < 1) stop("Input files required")
+
+    for (i in 1:length(files)){
+      df.file <- files[i]
+      df.set <- names(files)[i]
+      if(is.null(df.set) || df.set == "") df.set <- df.file
+
         write(paste("reading table: ", df.file), stderr());
 
         df.fh <- OpenRead(df.file) # prevent R peek bug on <() constructs
         df.tmp <- read.table(df.fh, header=F, fill=T, sep="\t");
         close(df.fh)
 
-        df.tmp[5] <- df.file
+        df.tmp[5] <- df.set
         colnames(df.tmp) <- c("contig","length","GC","coverage", "assembly");
         df <- rbind(df, df.tmp)
     }
 
     dk <- c();
-    if(length(kmer.histo)){
+    if(!is.null(kmer.histo)){
+        write("reading kmer histo", stderr());
+
         dk <- read.table(kmer.histo, header=F)
         colnames(dk) <- c("coverage", "count")
                                         #dk$frequency
@@ -1004,18 +1012,26 @@ asmcov <- function(..., out="kmerPlot.pdf", length.min=1000, coverage.max=300,
         scale.x <- scale_x_continuous(breaks=x.breaks, labels=anscombe_inv, "coverage", limits=c(NA, anscombe(x.max)))
     }
 
-    gh <- ggplot(df) +
-        geom_bar(gh.aes, stat="bin", binwidth=bin.width) +
+    kmer.scale <- 1
+    gg.stat <- stat_bin(data=df, gh.aes, binwidth=bin.width)
+    gg.stat.precomp <- print(ggplot() + gg.stat)
+    unlink("Rplots.pdf")
+    gg.stat.max <- max(gg.stat.precomp[["data"]][[1]]$y)
+
+    gh <- ggplot(df, environment=environment()) +
+      gg.stat +
             scale_y_continuous("sum of length [bp]", labels=scientific_format(digits=0)) +
                 gh.theme +
                     gh.guides +
                         scale.x +
                             scale.fill +
-                                facet_wrap(~assembly, ncol=1)
+                                facet_wrap(~assembly, ncol=plot.facet.ncol)
 
-    if(length(kmer.histo)){
-        gh <- gh + geom_line(
-            data=dk[dk$coverage >10,], aes(x=anscombe(coverage), y=count*50, linetype="count * 50")) +
+    if(!is.null(kmer.histo)){
+      kmer.max <- max(dk$count[-1:-10])
+      kmer.scale <- gg.stat.max/kmer.max*0.8
+      gh <- gh + geom_line(
+            data=dk[dk$coverage >10,], aes(x=anscombe(coverage), y=count*kmer.scale, linetype=paste("count *", round(kmer.scale, digits=1))), linetype=3) +
                 scale_linetype("k-mers")
 
     }
