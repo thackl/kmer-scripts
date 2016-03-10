@@ -239,15 +239,15 @@ sub thread_worker{
         # process $c
         my @covs;
         if (! $opt{no_adjust}) {
-            open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
-            open(JFA, "jellyfish query -s $tfa $opt{jfa} | cut -d' ' -f2 |") or die $!;
+            open(JF, "jellyfish query -s $tfa $opt{jf} |") or die $!;
+            open(JFA, "jellyfish query -s $tfa $opt{jfa} |") or die $!;
             for (my $j=0; $j<@knum; $j++) {
                 my $cts = "\t";
                 my $cas = "\t";
                 my %ctmed;
                 my %camed;
                 for (my $i=0; $i<$knum[$j]; $i++) {
-                    my $ct = <JF>;
+                    my ($kdum, $ct) = split(" ", scalar <JF>);
                     if (! defined $ct) {
                         print STDERR "expected mers: $knum[$j]\n";
                         print STDERR "seq num: ".($j+1)."\n";
@@ -279,12 +279,12 @@ sub thread_worker{
             close JF;
             close JFA;
         } else {
-            open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
+            open(JF, "jellyfish query -s $tfa $opt{jf} |") or die $!;
             for (my $j=0; $j<@knum; $j++) {
                 my $cs = "\t";
                 my %cmed;
                 for (my $i=0; $i<$knum[$j]; $i++) {
-                    my $c = <JF>;
+                    my ($kdum, $c) = split(" ", scalar <JF>);
                     chomp($c);
                     $cmed{$c}++;
                     $cs.=$c." " if $opt{full_counts};
