@@ -67,6 +67,10 @@ within +- standard deviation of the refined value. This is usually precise enoug
 Omit sequences shorter than this from analysis/output. They will be included in
 adjustment hash computation, though.
 
+=item -f|--full-counts [OFF] 
+
+Report counts of every individual kmer of a sequence in additional column.
+
 =item [--help]
 
 Show help
@@ -238,8 +242,8 @@ sub thread_worker{
             open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
             open(JFA, "jellyfish query -s $tfa $opt{jfa} | cut -d' ' -f2 |") or die $!;
             for (my $j=0; $j<@knum; $j++) {
-                my $cts = '';
-                my $cas = '';
+                my $cts = "\t";
+                my $cas = "\t";
                 my %ctmed;
                 my %camed;
                 for (my $i=0; $i<$knum[$j]; $i++) {
@@ -257,8 +261,10 @@ sub thread_worker{
                     my $ca = int(($ct/$cr)+.5);
                     $ctmed{$ct}++;
                     $camed{$ca}++;
-                    $cts.= $ct." ";
-                    $cas.= $ca." ";
+                    if ($opt{full_counts}){
+                        $cts.= $ct." ";
+                        $cas.= $ca." ";
+                    }
                 }
                 chop($cts);
                 chop($cas);
@@ -266,8 +272,8 @@ sub thread_worker{
                     hist_repr_anscombe(\%camed)."\t".
                     hist_med(\%camed)."\t".
                     hist_repr_anscombe(\%ctmed)."\t".
-                    hist_med(\%ctmed)."\t".
-                    $cts."\t".
+                    hist_med(\%ctmed).
+                    $cts.
                     $cas;
             }
             close JF;
@@ -275,19 +281,19 @@ sub thread_worker{
         } else {
             open(JF, "jellyfish query -s $tfa $opt{jf} | cut -d' ' -f2 |") or die $!;
             for (my $j=0; $j<@knum; $j++) {
-                my $cs = '';
+                my $cs = "\t";
                 my %cmed;
                 for (my $i=0; $i<$knum[$j]; $i++) {
                     my $c = <JF>;
                     chomp($c);
                     $cmed{$c}++;
-                    $cs.=$c." ";
+                    $cs.=$c." " if $opt{full_counts};
                 }
                 chop($cs);
                 push @covs, $fbin->[$j]->id()."\t".
                     hist_repr_anscombe(\%cmed).
-                    hist_med(\%cmed)."\t".
-                    "\t".$cs;
+                    hist_med(\%cmed).
+                    $cs;
             }
             close JF;
         }
@@ -366,6 +372,7 @@ sub init{
                      min_length|min-length|l=i
                      no_adjust|no-adjust|A!
                      no_load|no-load|L!
+                     full_counts|full-counts|f!
                      max_refine_exact|max-refine-exact=i
                      threads|t=i
                      version|V!
