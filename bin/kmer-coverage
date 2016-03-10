@@ -254,7 +254,7 @@ sub thread_worker{
                         print STDERR "fasta: $tfa\n";
                         exit;
                     }
-                    my $cr = <JFA>;
+                    my ($kdum2, $cr) = split(" ", scalar <JFA>);
                     chomp($ct);
                     chomp($cr);
                     next unless $cr; # 0 count derives from Ns
