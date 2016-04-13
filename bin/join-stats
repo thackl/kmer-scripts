@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Usage .fai -gc.tsv -cov.tsv
+PRE=`basename $1 .fa.fai`
+join --nocheck-order -t '	' <(cut -f1,2 $1) $2 | join --nocheck-order -t '	' - <(cut -f1-2 $3) > $PRE-stats.tsv
