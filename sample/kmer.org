@@ -1,0 +1,103 @@
+
+* Intro
+
+http://www.ncbi.nlm.nih.gov/sra/?term=ERR008613
+
+Sample: Escherichia coli str. K-12 substr. MG1655
+SAMEA779983 • ERS001423 • All experiments • All runs
+Organism: Escherichia coli str. K-12 substr. MG1655
+Library:
+Name: CT1093
+Instrument: Illumina Genome Analyzer II
+Strategy: WGS
+Source: GENOMIC
+Selection: RANDOM
+Layout: PAIRED
+Construction protocol: Standard Illumina paired-end library construction protocol. Genomic DNA was randomly fragmented using nebulisation and a ~200 bp fraction was obtained by gel electrophoresis.
+
+#+BEGIN_SRC sh :dir s187512@wrzh089:/storage/genomics/projects/ecoli/data/illumina_real/kmer
+head -n 10000000 ../raw/ERR008613_1.fastq > ERR008613-h10M_1.fq
+head -n 10000000 ../raw/ERR008613_2.fastq > ERR008613-h10M_2.fq
+jellyfish count -t 10 -C -m 19 -s 1G ERR008613-h10M_* -o ERR008613-h10M-m19.jf
+
+SeqFilter -p ERR008613-h10M_1.fq ERR008613-h10M_2.fq
+[08:02:28] /storage/genomics/scripts/bin/SeqFilter-2.1.4
+[08:02:28] Detected FASTQ format, phred-offset 33
+
+#+END_SRC
+
+| #source             | state |   reads |     bases | max | min | N50 | N90 |
+| ERR008613-h10M_1.fq | RAW   | 2500000 | 250000000 | 100 | 100 | 100 | 100 |
+| ERR008613-h10M_2.fq | RAW   | 2500000 | 250000000 | 100 | 100 | 100 | 100 |
+| TOTAL               | RAW   | 5000000 | 500000000 | 100 | 100 | 100 | 100 |
+
+#+BEGIN_SRC 
+kmer-plot kcov plot.points=T plot.peaks=F theme=gg \"E.coli_K-12\"=ERR008613-h10M-m19.jf coverage.max=200 plot.fits=T  width=5 height=3
+#+END_SRC
+* anscombe
+** data
+#+BEGIN_SRC sh :dir yar:~/projects/diss-kmer
+seq-shit 1000000 >A.fa
+seq-shit 1000000 >B.fa
+#seq-frag se -l 100 -c 50 <A.fa >A-50x.fq
+#seq-frag se -l 100 -c 1000 <B.fa >B-1000x.fq
+
+
+#export pre=A cov=50
+export pre=B cov=1000
+~/software/art/art_illumina \
+ -sam \
+ -ef \
+ -p \
+ -f $cov \
+ -1 ~/software/art/Illumina_profiles/hs100-raw-Dm_1.txt \
+ -2 ~/software/art/Illumina_profiles/hs100-raw-Dm_2.txt \
+ -l 100 \
+ -m 180 \
+ -s 20 \
+ -i $pre.fa \
+ -o $pre-ms-100-180-01_
+
+rename 's/A-ms-250-400-01/A-il-100-180-50x-01/' *
+rename 's/B-ms-250-400-01/B-il-100-180-1000x-01/' *
+
+jellyfish count -C -m19 -s1G -o AB-m19.jf A-il-100-180-50x-01*.fq B-il-100-180-1000x-01*.fq
+
+#+END_SRC
+** plots
+#+BEGIN_SRC 
+# Ec
+kmer-plot kcov plot.points=T plot.peaks=F theme=gg \"E.coli_K-12\"=ERR008613-h10M-m19.jf coverage.max=200 plot.fits=T  width=5 height=3
+
+# random
+kmer-plot kcov AB-m19.tsv plot.points=T coverage.max=1200 plot.fits=T height=3 width=9 anscombe=F out=AB-kcov.pdf
+kmer-plot kcov AB-m19.tsv plot.peaks=T coverage.max=1200 plot.fits=T height=3 width=9 anscombe=T out=AB-kcov-ansc.pdf
+
+# mav/phage anscombe facet
+mount-bmm
+cd ~mav/data/miseq/kmer 
+kmer-plot kcov \
+anscombe=T \
+coverage.max=0 \
+plot.facet=TRUE \
+width=12 height=5 out=kcov-mav-anscombe-facet.pdf \
+mav-ms-01-raw.jf mav-ms-01-trm.jf svlp2-ms-01-raw.jf svlp2-ms-01-trm.jf
+cd 1
+cp ~mav/data/miseq/kmer/kcov-mav-anscombe-facet.pdf .
+
+
+# dm
+kmer-plot kcov width=7 height=3 out=kcov-dm.pdf \
+ \"dm-il-lgc-raw-m19\"=../dm-kmer/dm-il-raw-m19-histo.tsv \
+ \"dm-il-bgi-pe-raw-m19\"=../dm-kmer/dm-gen-bgi-pe-raw-m19.tsv
+
+#+END_SRC
+
+* gccov
+#+BEGIN_SRC 
+kmer-plot gccov <(cut -f1-4 /storage/genomics/projects/hdujardini/blobology/tg.genome-nn-stats-franks-taxa.tsv) palette=Dark2 coverage.max=200 out=gccov-tg.png
+
+kmer-plot gccov <(cut -f1- /storage/genomics/projects/hdujardini/blobology/tg.genome-nn-stats-franks-taxa.tsv) palette=Dark2 coverage.max=200 out=gccov-tg-tax.png
+
+
+#+END_SRC

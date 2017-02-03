@@ -1,0 +1,114 @@
+**** Dependencies
+
+- R
+  - ggplot2
+
+#+BEGIN_SRC
+install.packages("ggplot2")
+#+END_SRC
+
+**** Usage
+#+BEGIN_SRC
+kmer-plot --help
+kmer-plot MODE [OPT=VAL ...] [name=]FILE [[name=]FILE ...]
+#+END_SRC
+
+**** Mode and Options
+#+BEGIN_ASCII
+# kcov mode
+kmer-plot kcov
+
+[name=]FILE         jellyfish hash or two column count histogram (count abundance).
+                    name is optional, should be enclosed in escaped \",
+                    e.g. \"Set1\"=set1.jf
+
+out="kcov.pdf"      output file name, supports .png, .pdf, .ps.
+coverage.max=300    coverage axix maximum, 0 is data max.
+count.max=0         count axis maximum, 0 is data max.
+anscombe=FALSE      display Anscombe transformed data (variance stabilization)
+
+
+theme=c("gg","bw","classic")   choose one.
+plot.lines=!anscombe           draw line graph, TRUE or FALSE, default opposite of anscombe=.
+plot.bars=anscombe             draw bar graph, TRUE or FALSE, default same as anscombe=.
+plot.facet=F                   draw multiple sets facetted
+plot.lines.width=.5            ...
+plot.peaks=!anscombe
+plot.peak.labels=plot.peaks
+plot.peak.points=plot.peaks
+plot.peak.ranges=plot.peaks
+peak.size.min=10000
+peak.label.angle=0
+peak.label.hjust=.5
+peak.label.size=3
+width=10
+height=6
+
+# gccov mode
+kmer-plot gccov
+[name=]FILE         character separated file with one row per contig, 4 or 5
+                    columns: (id length GC coverage [taxonomic-group])
+
+sep="\t"            column-separator
+out="gccov.pdf"     output file name, supports .png, .pdf, .ps.
+coverage.max=300    coverage axix maximum, 0 is data max.
+length.min=1000     minimum length of contigs to display/use in sum of length
+tax.occ.min=1       minimum occurance of a taxon to display
+bin.num=100         number of bins for total length histogram
+tax.ignore=FALSE    ignore taxonomy column (color by length)
+length.min.scatter=0     minimum length for contigs to display in scatter plot,
+                         still counted in sum of length
+jitter=FALSE        add jitter to better visualize fully overlapping data points
+sample.scatter=0    only display this random fraction of data points in scatter
+width=10
+height=6
+#+END_ASCII
+
+
+**** Examples
+***** =kcov= Distribution of 19-mers in 5*10^6 reads of E.coli K-12
+#+BEGIN_SRC
+# download http://www.ncbi.nlm.nih.gov/sra/?term=ERR008613
+# get 500 Mbp read data
+head -n 10000000 ../raw/ERR008613_1.fastq > ERR008613-h10M_1.fq
+head -n 10000000 ../raw/ERR008613_2.fastq > ERR008613-h10M_2.fq
+# count kmers
+jellyfish count -t 10 -C -m 19 -s 1G ERR008613-250_* -o e-coli.jf
+jellyfish histo e-coli.jf > e-coli.tsv
+
+# plot distribution
+kmer-plot kcov e-coli.tsv plot.peaks=F theme=gg coverage.max=200 width=5 height=3 out=e-coli-kcov.png
+#+END_SRC
+
+[[sample/e-coli-kcov.png]]
+***** =kcov= Random data with two kmer populations
+#+BEGIN_SRC
+kmer-plot kcov AB-m19.tsv coverage.max=1200 height=3 width=9 anscombe=F out=AB-kcov.png
+kmer-plot kcov AB-m19.tsv plot.peaks=T coverage.max=1200 height=3 width=9 anscombe=T out=AB-kcov-ansc.png
+#+END_SRC
+
+[[sample/AB-kcov.png]]
+[[sample/AB-kcov-ansc.png]]
+
+***** =kcov= Overlay / facetting of distributions of two genomic samples
+#+BEGIN_SRC
+kmer-plot kcov width=7 height=3 out=dm-kcov.png \
+ \"diploid-clonal\"=dm-il-raw-m19-histo.tsv \
+ \"diploid-mix\"=dm-gen-bgi-pe-raw-m19.tsv
+
+kmer-plot kcov width=8 height=5 anscombe=T plot.facet=TRUE out=dm-kcov-facet.png \
+ \"diploid-clonal\"=dm-il-raw-m19-histo.tsv \
+ \"diploid-mix\"=dm-gen-bgi-pe-raw-m19.tsv
+#+END_SRC
+
+[[sample/dm-kcov.png]]
+[[sample/dm-kcov-facet.png]]
+
+***** =gccov= GC-coverage plot for (meta-) genome assemblies
+#+BEGIN_SRC
+kmer-plot gccov <(cut -f1-4 tg.genome-nn-stats-franks-taxa.tsv) palette=Dark2 coverage.max=200 out=tg-gccov.png
+kmer-plot gccov <(cut -f1- tg.genome-nn-stats-franks-taxa.tsv) palette=Dark2 coverage.max=200 out=tg-gccov-tax.png
+#+END_SRC
+
+[[sample/tg-gccov.png]]
+[[sample/tg-gccov-tax.png]]
