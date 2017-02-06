@@ -14,7 +14,7 @@ kmer-plot MODE [OPT=VAL ...] [name=]FILE [[name=]FILE ...]
 #+END_SRC
 
 **** Mode and Options
-#+BEGIN_ASCII
+#+BEGIN_SRC
 # kcov mode
 kmer-plot kcov
 
@@ -62,7 +62,7 @@ jitter=FALSE        add jitter to better visualize fully overlapping data points
 sample.scatter=0    only display this random fraction of data points in scatter
 width=10
 height=6
-#+END_ASCII
+#+END_SRC
 
 
 **** Examples
